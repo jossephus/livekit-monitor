@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { RefreshCw } from "lucide-react"
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 
-interface Room {
+interface ActiveRoom {
   sid: string
   name: string
   num_participants: number
@@ -22,32 +22,93 @@ interface Room {
   num_publishers: number
 }
 
+interface WebhookEvent {
+  created_at?: number
+  room?: {
+    sid?: string
+    name?: string
+  }
+}
+
+interface RoomRow {
+  sid: string
+  name: string
+  num_participants: number
+  creation_time: number
+  status: "Active" | "Inactive"
+}
+
 const REFRESH_INTERVAL = 5000
 
+function normalizeTimestamp(raw?: number): number {
+  if (!raw) return 0
+  return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : raw
+}
+
 export default function RoomsPage() {
-  const [rooms, setRooms] = useState<Room[]>([])
+  const [rooms, setRooms] = useState<RoomRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function fetchRooms() {
+  const fetchRooms = useCallback(async () => {
     try {
-      const res = await fetch("/api/rooms")
-      if (!res.ok) throw new Error(`Failed to fetch rooms: ${res.statusText}`)
-      const data = await res.json()
-      setRooms(data)
+      const [roomsRes, eventsRes] = await Promise.all([
+        fetch("/api/rooms"),
+        fetch("/api/webhook/events"),
+      ])
+
+      if (!roomsRes.ok) {
+        throw new Error(`Failed to fetch rooms: HTTP ${roomsRes.status}`)
+      }
+
+      const activeRooms: ActiveRoom[] = await roomsRes.json()
+
+      const roomMap = new Map<string, RoomRow>()
+
+      activeRooms.forEach((room) => {
+        roomMap.set(room.name, {
+          sid: room.sid,
+          name: room.name,
+          num_participants: room.num_participants,
+          creation_time: room.creation_time,
+          status: "Active",
+        })
+      })
+
+      if (eventsRes.ok) {
+        const events: WebhookEvent[] = await eventsRes.json()
+        events.forEach((event) => {
+          const roomName = event.room?.name
+          if (!roomName || roomMap.has(roomName)) return
+
+          roomMap.set(roomName, {
+            sid: event.room?.sid ?? "-",
+            name: roomName,
+            num_participants: 0,
+            creation_time: normalizeTimestamp(event.created_at),
+            status: "Inactive",
+          })
+        })
+      }
+
+      const mergedRooms = Array.from(roomMap.values()).sort(
+        (a, b) => b.creation_time - a.creation_time
+      )
+
+      setRooms(mergedRooms)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchRooms()
     const interval = setInterval(fetchRooms, REFRESH_INTERVAL)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchRooms])
 
   function formatCreatedAt(timestamp: number): string {
     if (!timestamp) return "—"
@@ -59,6 +120,7 @@ export default function RoomsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Rooms</h1>
         <button
+          type="button"
           onClick={fetchRooms}
           className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -105,10 +167,10 @@ export default function RoomsPage() {
                 <TableCell>{room.num_participants}</TableCell>
                 <TableCell>{formatCreatedAt(room.creation_time)}</TableCell>
                 <TableCell>
-                  {room.num_participants > 0 ? (
+                  {room.status === "Active" ? (
                     <Badge variant="default">Active</Badge>
                   ) : (
-                    <Badge variant="secondary">Empty</Badge>
+                    <Badge variant="secondary">Inactive</Badge>
                   )}
                 </TableCell>
               </TableRow>
