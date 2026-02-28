@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod livekit_client;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::Config;
@@ -30,9 +31,39 @@ async fn main() {
 
     let webhook_state = api::WebhookState::new(&config.api_key, &config.api_secret);
 
-    let routes = api::routes(clients, webhook_state).recover(api::handle_rejection);
+    let api_routes = api::routes(clients, webhook_state);
 
-    log::info!("Starting server on port {}", config.port);
+    let frontend_dir = PathBuf::from(&config.frontend_dir);
+    let index_path = frontend_dir.join("index.html");
+
+    let static_files = warp::fs::dir(frontend_dir);
+    let spa_fallback = warp::any()
+        .and(warp::path::full())
+        .and_then(move |path: warp::path::FullPath| {
+            let index = index_path.clone();
+            async move {
+                if path.as_str().starts_with("/api/") {
+                    Err(warp::reject::not_found())
+                } else {
+                    Ok(warp::reply::html(
+                        tokio::fs::read_to_string(&index)
+                            .await
+                            .unwrap_or_default(),
+                    ))
+                }
+            }
+        });
+
+    let routes = api_routes
+        .or(static_files)
+        .or(spa_fallback)
+        .recover(api::handle_rejection);
+
+    log::info!(
+        "Starting server on port {} (frontend: {})",
+        config.port,
+        config.frontend_dir,
+    );
     warp::serve(routes)
         .run(([0, 0, 0, 0], config.port))
         .await;
