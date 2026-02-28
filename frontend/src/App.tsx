@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom"
 import Layout from "./components/Layout"
 import OverviewPage from "./pages/OverviewPage"
 import RoomsPage from "./pages/RoomsPage"
+import RoomDetailPage from "./pages/RoomDetailPage"
 import SessionsPage from "./pages/SessionsPage"
 import EgressPage from "./pages/EgressPage"
 import IngressPage from "./pages/IngressPage"
@@ -13,6 +14,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<OverviewPage />} />
         <Route path="/rooms" element={<RoomsPage />} />
+        <Route path="/rooms/:name" element={<RoomDetailPage />} />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/egress" element={<EgressPage />} />
         <Route path="/ingress" element={<IngressPage />} />
