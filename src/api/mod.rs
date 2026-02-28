@@ -13,6 +13,8 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::livekit_client::LiveKitClients;
 
+pub use webhook::WebhookState;
+
 #[derive(Debug)]
 pub struct ApiError(pub String);
 
@@ -31,11 +33,13 @@ pub fn with_clients(
 
 pub fn routes(
     clients: Arc<LiveKitClients>,
+    webhook_state: WebhookState,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     rooms::routes(clients.clone())
         .or(egress::routes(clients.clone()))
         .or(ingress::routes(clients.clone()))
         .or(overview::routes(clients))
+        .or(webhook::routes(webhook_state))
 }
 
 pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {

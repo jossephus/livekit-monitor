@@ -28,7 +28,9 @@ async fn main() {
         &config.api_secret,
     ));
 
-    let routes = api::routes(clients).recover(api::handle_rejection);
+    let webhook_state = api::WebhookState::new(&config.api_key, &config.api_secret);
+
+    let routes = api::routes(clients, webhook_state).recover(api::handle_rejection);
 
     log::info!("Starting server on port {}", config.port);
     warp::serve(routes)
