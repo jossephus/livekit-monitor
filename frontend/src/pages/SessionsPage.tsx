@@ -10,46 +10,27 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-interface RawWebhookEvent {
-  id?: string
-  event?: string | number
-  created_at?: number
-  room?: {
-    sid?: string
-    name?: string
-  }
-  participant?: {
-    identity?: string
-    sid?: string
-  }
-}
-
 interface SessionRow {
-  sessionId: string
-  roomName: string
-  startedAt: number
-  endedAt?: number
-  durationSec: number
+  session_id: string
+  room_name: string
+  started_at: number
+  ended_at?: number
+  duration_seconds: number
   participants: number
-  status: "active" | "ended"
+  status: string
 }
 
 const REFRESH_INTERVAL = 10000
-
-function normalizeTimestamp(raw?: number): number {
-  if (!raw) return Math.floor(Date.now() / 1000)
-  return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : raw
-}
 
 function formatDate(epochSeconds?: number): string {
   if (!epochSeconds) return "-"
   return new Date(epochSeconds * 1000).toLocaleString()
 }
 
-function formatDuration(durationSec: number): string {
-  const hours = Math.floor(durationSec / 3600)
-  const minutes = Math.floor((durationSec % 3600) / 60)
-  const seconds = durationSec % 60
+function formatDuration(durationSeconds: number): string {
+  const hours = Math.floor(durationSeconds / 3600)
+  const minutes = Math.floor((durationSeconds % 3600) / 60)
+  const seconds = durationSeconds % 60
   if (hours > 0) {
     return `${hours}h ${minutes}m ${seconds}s`
   }
@@ -59,161 +40,60 @@ function formatDuration(durationSec: number): string {
   return `${seconds}s`
 }
 
-function toEventLabel(event: string | number | undefined): string {
-  return String(event ?? "").toLowerCase()
-}
-
-function isRoomStart(event: string): boolean {
-  return event.includes("room_started")
-}
-
-function isRoomEnd(event: string): boolean {
-  return event.includes("room_finished")
-}
-
-function isParticipantJoin(event: string): boolean {
-  return event.includes("participant_joined")
-}
-
-function buildSessions(events: RawWebhookEvent[]): SessionRow[] {
-  type MutableSession = {
-    sessionId: string
-    roomName: string
-    startedAt: number
-    endedAt?: number
-    status: "active" | "ended"
-    participantSet: Set<string>
-  }
-
-  const now = Math.floor(Date.now() / 1000)
-  const openByRoom = new Map<string, MutableSession>()
-  const completed: MutableSession[] = []
-
-  events.forEach((event, index) => {
-    const label = toEventLabel(event.event)
-    const timestamp = normalizeTimestamp(event.created_at)
-    const roomName = event.room?.name || event.room?.sid || "unknown-room"
-    const participantId = event.participant?.identity || event.participant?.sid
-
-    if (isRoomStart(label)) {
-      const sessionId = event.id || `${roomName}-${timestamp}-${index}`
-      const session: MutableSession = {
-        sessionId,
-        roomName,
-        startedAt: timestamp,
-        status: "active",
-        participantSet: new Set(),
-      }
-      openByRoom.set(roomName, session)
-      return
-    }
-
-    if (isParticipantJoin(label)) {
-      const existing = openByRoom.get(roomName)
-      if (existing) {
-        if (participantId) existing.participantSet.add(participantId)
-        return
-      }
-
-      const fallbackId = event.id || `${roomName}-${timestamp}-${index}`
-      const session: MutableSession = {
-        sessionId: fallbackId,
-        roomName,
-        startedAt: timestamp,
-        status: "active",
-        participantSet: new Set(participantId ? [participantId] : []),
-      }
-      openByRoom.set(roomName, session)
-      return
-    }
-
-    if (isRoomEnd(label)) {
-      const existing = openByRoom.get(roomName)
-      if (!existing) {
-        return
-      }
-      existing.endedAt = timestamp
-      existing.status = "ended"
-      openByRoom.delete(roomName)
-      completed.push(existing)
-    }
-  })
-
-  const active = Array.from(openByRoom.values())
-  const all = [...completed, ...active]
-
-  return all
-    .map((session) => {
-      const end = session.endedAt ?? now
-      return {
-        sessionId: session.sessionId,
-        roomName: session.roomName,
-        startedAt: session.startedAt,
-        endedAt: session.endedAt,
-        durationSec: Math.max(0, end - session.startedAt),
-        participants: session.participantSet.size,
-        status: session.status,
-      }
-    })
-    .sort((a, b) => b.startedAt - a.startedAt)
-}
-
 export default function SessionsPage() {
-  const [events, setEvents] = useState<RawWebhookEvent[]>([])
+  const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "ended">("all")
 
-  const fetchEvents = useCallback(async () => {
+  const fetchSessions = useCallback(async () => {
     try {
-      const res = await fetch("/api/webhook/events")
+      const params = new URLSearchParams()
+      if (query.trim()) params.set("search", query.trim())
+      if (statusFilter !== "all") params.set("status", statusFilter)
+      params.set("limit", "500")
+
+      const qs = params.toString()
+      const url = qs.length > 0 ? `/api/sessions?${qs}` : "/api/sessions"
+      const res = await fetch(url)
       if (!res.ok) {
-        throw new Error(`Failed to fetch webhook events: HTTP ${res.status}`)
+        throw new Error(`Failed to fetch sessions: HTTP ${res.status}`)
       }
-      const data: RawWebhookEvent[] = await res.json()
-      setEvents(data)
+      const data: SessionRow[] = await res.json()
+      setSessions(data)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch sessions")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [query, statusFilter])
 
   useEffect(() => {
-    fetchEvents()
-  }, [fetchEvents])
+    fetchSessions()
+  }, [fetchSessions])
 
   useEffect(() => {
-    const id = setInterval(fetchEvents, REFRESH_INTERVAL)
+    const id = setInterval(fetchSessions, REFRESH_INTERVAL)
     return () => clearInterval(id)
-  }, [fetchEvents])
+  }, [fetchSessions])
 
-  const sessions = useMemo(() => buildSessions(events), [events])
-
-  const filteredSessions = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    return sessions.filter((session) => {
-      const matchesStatus = statusFilter === "all" || session.status === statusFilter
-      const matchesSearch =
-        term.length === 0 ||
-        session.sessionId.toLowerCase().includes(term) ||
-        session.roomName.toLowerCase().includes(term)
-      return matchesStatus && matchesSearch
-    })
-  }, [sessions, query, statusFilter])
+  const hasFilters = useMemo(
+    () => query.trim().length > 0 || statusFilter !== "all",
+    [query, statusFilter]
+  )
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Sessions</h1>
-          <p className="text-sm text-muted-foreground">Derived from recent webhook events</p>
+          <p className="text-sm text-muted-foreground">Historical records from webhook ingestion</p>
         </div>
         <button
           type="button"
-          onClick={fetchEvents}
+          onClick={fetchSessions}
           className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
@@ -251,8 +131,12 @@ export default function SessionsPage() {
 
       {loading ? (
         <p className="text-muted-foreground">Loading sessions...</p>
-      ) : filteredSessions.length === 0 ? (
-        <p className="text-muted-foreground">No sessions found for the current filters.</p>
+      ) : sessions.length === 0 ? (
+        <p className="text-muted-foreground">
+          {hasFilters
+            ? "No sessions found for the current filters."
+            : "No sessions yet. Configure LiveKit webhook to POST to /api/webhook and generate room activity."}
+        </p>
       ) : (
         <Table>
           <TableHeader>
@@ -267,13 +151,13 @@ export default function SessionsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredSessions.map((session) => (
-              <TableRow key={session.sessionId}>
-                <TableCell className="font-mono text-xs">{session.sessionId}</TableCell>
-                <TableCell className="font-medium">{session.roomName}</TableCell>
-                <TableCell>{formatDate(session.startedAt)}</TableCell>
-                <TableCell>{formatDate(session.endedAt)}</TableCell>
-                <TableCell>{formatDuration(session.durationSec)}</TableCell>
+            {sessions.map((session) => (
+              <TableRow key={session.session_id}>
+                <TableCell className="font-mono text-xs">{session.session_id}</TableCell>
+                <TableCell className="font-medium">{session.room_name}</TableCell>
+                <TableCell>{formatDate(session.started_at)}</TableCell>
+                <TableCell>{formatDate(session.ended_at)}</TableCell>
+                <TableCell>{formatDuration(session.duration_seconds)}</TableCell>
                 <TableCell>{session.participants}</TableCell>
                 <TableCell>
                   <Badge variant={session.status === "active" ? "default" : "secondary"}>
