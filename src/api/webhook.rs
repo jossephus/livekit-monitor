@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 use warp::{Filter, Rejection, Reply};
 
 use super::ApiError;
+use crate::session_store::SessionStore;
 
 const MAX_EVENTS: usize = 500;
 
@@ -15,14 +16,16 @@ const MAX_EVENTS: usize = 500;
 pub struct WebhookState {
     receiver: WebhookReceiver,
     events: Arc<RwLock<VecDeque<proto::WebhookEvent>>>,
+    session_store: Arc<SessionStore>,
 }
 
 impl WebhookState {
-    pub fn new(api_key: &str, api_secret: &str) -> Self {
+    pub fn new(api_key: &str, api_secret: &str, session_store: Arc<SessionStore>) -> Self {
         let verifier = TokenVerifier::with_api_key(api_key, api_secret);
         Self {
             receiver: WebhookReceiver::new(verifier),
             events: Arc::new(RwLock::new(VecDeque::with_capacity(MAX_EVENTS))),
+            session_store,
         }
     }
 }
@@ -79,6 +82,11 @@ async fn handle_receive_webhook(
         event.event,
         event.room.as_ref().map(|r| &r.name)
     );
+
+    state
+        .session_store
+        .handle_webhook_event(&event)
+        .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist session event: {e}"))))?;
 
     let mut events = state.events.write().await;
     if events.len() >= MAX_EVENTS {

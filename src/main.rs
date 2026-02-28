@@ -1,12 +1,14 @@
 mod api;
 mod config;
 mod livekit_client;
+mod session_store;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::Config;
 use livekit_client::LiveKitClients;
+use session_store::SessionStore;
 use warp::Filter;
 
 #[tokio::main]
@@ -29,9 +31,15 @@ async fn main() {
         &config.api_secret,
     ));
 
-    let webhook_state = api::WebhookState::new(&config.api_key, &config.api_secret);
+    let session_store = Arc::new(
+        SessionStore::new(&config.sqlite_path)
+            .expect("Failed to initialize SQLite session store"),
+    );
 
-    let api_routes = api::routes(clients, webhook_state);
+    let webhook_state =
+        api::WebhookState::new(&config.api_key, &config.api_secret, session_store.clone());
+
+    let api_routes = api::routes(clients, webhook_state, session_store);
 
     let frontend_dir = PathBuf::from(&config.frontend_dir);
     let index_path = frontend_dir.join("index.html");
@@ -60,9 +68,10 @@ async fn main() {
         .recover(api::handle_rejection);
 
     log::info!(
-        "Starting server on port {} (frontend: {})",
+        "Starting server on port {} (frontend: {}, sqlite: {})",
         config.port,
         config.frontend_dir,
+        config.sqlite_path,
     );
     warp::serve(routes)
         .run(([0, 0, 0, 0], config.port))

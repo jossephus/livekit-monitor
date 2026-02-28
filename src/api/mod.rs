@@ -2,6 +2,7 @@ pub mod egress;
 pub mod ingress;
 pub mod overview;
 pub mod rooms;
+pub mod sessions;
 pub mod webhook;
 
 use std::convert::Infallible;
@@ -12,6 +13,7 @@ use warp::http::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
 use crate::livekit_client::LiveKitClients;
+use crate::session_store::SessionStore;
 
 pub use webhook::WebhookState;
 
@@ -34,11 +36,13 @@ pub fn with_clients(
 pub fn routes(
     clients: Arc<LiveKitClients>,
     webhook_state: WebhookState,
+    session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     rooms::routes(clients.clone())
         .or(egress::routes(clients.clone()))
         .or(ingress::routes(clients.clone()))
         .or(overview::routes(clients))
+        .or(sessions::routes(session_store))
         .or(webhook::routes(webhook_state))
 }
 
