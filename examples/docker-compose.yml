@@ -70,5 +70,23 @@ services:
     volumes:
       - ./ingress.yaml:/etc/ingress/ingress.yaml:ro
 
+  monitor:
+    image: livekit-monitor:latest
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    environment:
+      LIVEKIT_URL: http://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      PORT: "3001"
+      SQLITE_PATH: /data/monitor.db
+      RUST_LOG: info
+    ports:
+      - "3001:3001"
+    volumes:
+      - monitor_data:/data
+
 volumes:
   minio_data:
+  monitor_data:

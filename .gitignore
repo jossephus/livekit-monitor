@@ -1,4 +1,9 @@
 /target
+result
 .DS_Store
 .npm/
 progress.txt
+.agents/
+data/
+examples/recordings/
+skills-lock.json
