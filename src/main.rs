@@ -9,6 +9,7 @@ use std::sync::Arc;
 use config::Config;
 use livekit_client::LiveKitClients;
 use session_store::SessionStore;
+use api::settings::SettingsInfo;
 use warp::Filter;
 
 #[tokio::main]
@@ -39,7 +40,12 @@ async fn main() {
     let webhook_state =
         api::WebhookState::new(&config.api_key, &config.api_secret, session_store.clone());
 
-    let api_routes = api::routes(clients, webhook_state, session_store);
+    let settings_info = Arc::new(SettingsInfo {
+        livekit_url: config.livekit_url.clone(),
+        api_key: config.api_key.clone(),
+    });
+
+    let api_routes = api::routes(clients, webhook_state, session_store, settings_info);
 
     let frontend_dir = PathBuf::from(&config.frontend_dir);
     let index_path = frontend_dir.join("index.html");

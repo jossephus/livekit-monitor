@@ -2,6 +2,7 @@ pub mod egress;
 pub mod ingress;
 pub mod overview;
 pub mod rooms;
+pub mod settings;
 pub mod sessions;
 pub mod webhook;
 
@@ -14,6 +15,7 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::livekit_client::LiveKitClients;
 use crate::session_store::SessionStore;
+use settings::SettingsInfo;
 
 pub use webhook::WebhookState;
 
@@ -33,15 +35,23 @@ pub fn with_clients(
     warp::any().map(move || clients.clone())
 }
 
+pub fn with_session_store(
+    session_store: Arc<SessionStore>,
+) -> impl Filter<Extract = (Arc<SessionStore>,), Error = Infallible> + Clone {
+    warp::any().map(move || session_store.clone())
+}
+
 pub fn routes(
     clients: Arc<LiveKitClients>,
     webhook_state: WebhookState,
     session_store: Arc<SessionStore>,
+    settings_info: Arc<SettingsInfo>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    rooms::routes(clients.clone())
+    rooms::routes(clients.clone(), session_store.clone())
         .or(egress::routes(clients.clone(), session_store.clone()))
         .or(ingress::routes(clients.clone()))
         .or(overview::routes(clients))
+        .or(settings::routes(settings_info))
         .or(sessions::routes(session_store))
         .or(webhook::routes(webhook_state))
 }
