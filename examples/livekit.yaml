@@ -19,5 +19,8 @@ webhook:
   urls:
     - http://host.docker.internal:3001/api/webhook
 
+ingress:
+  rtmp_base_url: "rtmp://localhost:1935/live"
+
 logging:
   level: info

@@ -56,5 +56,19 @@ services:
       - ./egress.yaml:/etc/egress/egress.yaml:ro
       - ./recordings:/out
 
+  ingress:
+    image: livekit/ingress:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - livekit
+    environment:
+      INGRESS_CONFIG_FILE: /etc/ingress/ingress.yaml
+    ports:
+      - "1935:1935"
+      - "8080:8080"
+    volumes:
+      - ./ingress.yaml:/etc/ingress/ingress.yaml:ro
+
 volumes:
   minio_data:

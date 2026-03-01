@@ -1,6 +1,6 @@
 # Local LiveKit Test Stack
 
-This compose stack runs local LiveKit + Redis + Egress + MinIO so you can place test calls and validate dashboard sessions/history and egress jobs.
+This compose stack runs local LiveKit + Redis + Egress + Ingress + MinIO so you can place test calls and validate dashboard sessions/history plus egress/ingress jobs.
 
 ## Start Stack
 
@@ -17,6 +17,7 @@ Services will be available at:
 - API secret: `secret`
 - MinIO API: `http://localhost:9000`
 - MinIO Console: `http://localhost:9001` (`minioadmin` / `minioadmin`)
+- RTMP Ingress endpoint base: `rtmp://localhost:1935/live`
 
 ## Run Dashboard Against Local LiveKit
 
