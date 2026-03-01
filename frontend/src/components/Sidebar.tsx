@@ -1,49 +1,56 @@
 import { NavLink } from "react-router-dom"
-import {
-  LayoutDashboard,
-  DoorOpen,
-  Activity,
-  ArrowUpFromLine,
-  ArrowDownToLine,
-  Settings,
-} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/rooms", label: "Rooms", icon: DoorOpen },
-  { to: "/sessions", label: "Sessions", icon: Activity },
-  { to: "/egress", label: "Egress", icon: ArrowUpFromLine },
-  { to: "/ingress", label: "Ingress", icon: ArrowDownToLine },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "Overview" },
+  { to: "/rooms", label: "Rooms" },
+  { to: "/sessions", label: "Sessions" },
+  { to: "/egress", label: "Egress" },
+  { to: "/ingress", label: "Ingress" },
+  { to: "/settings", label: "Settings" },
 ]
 
 export default function Sidebar() {
   return (
-    <aside className="flex h-screen w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
-      <div className="flex h-14 items-center border-b px-4">
-        <h1 className="text-lg font-semibold">LiveKit Dashboard</h1>
+    <aside className="flex h-screen w-64 flex-col bg-sidebar text-sidebar-foreground">
+      <div className="border-sidebar-border border-b px-7 py-8">
+        <p className="text-2xl font-light lowercase tracking-[0.08em]">livekit</p>
+        <p className="pt-1 text-xs uppercase tracking-[0.2em] text-sidebar-foreground/45">dashboard</p>
       </div>
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 px-5 py-8">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === "/"}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              )
-            }
+            className="block rounded-md px-2 py-2 text-xs uppercase tracking-[0.15em] transition-colors"
           >
-            <item.icon className="h-4 w-4" />
-            {item.label}
+            {({ isActive }) => (
+              <span
+                className={cn(
+                  "flex items-center gap-3",
+                  isActive
+                    ? "text-sidebar-foreground"
+                    : "text-sidebar-foreground/50 hover:text-sidebar-foreground/75"
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-3 text-center text-[10px] leading-none",
+                    isActive ? "text-[#A8A29E]" : "text-transparent"
+                  )}
+                >
+                  ●
+                </span>
+                {item.label}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
+      <div className="border-sidebar-border border-t px-7 py-5 text-[10px] uppercase tracking-[0.15em] text-sidebar-foreground/45">
+        self-hosted · v1.0
+      </div>
     </aside>
   )
 }

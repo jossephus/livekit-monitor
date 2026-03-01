@@ -85,16 +85,16 @@ export default function SessionsPage() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Sessions</h1>
+          <h1 className="text-2xl font-medium">Sessions</h1>
           <p className="text-sm text-muted-foreground">Historical records from webhook ingestion</p>
         </div>
         <button
           type="button"
           onClick={fetchSessions}
-          className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -108,14 +108,14 @@ export default function SessionsPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by session ID or room"
-            className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm"
+            className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-3 text-sm"
           />
         </label>
 
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "ended")}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm md:w-auto"
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm md:w-auto"
         >
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -138,36 +138,38 @@ export default function SessionsPage() {
             : "No sessions yet. Configure LiveKit webhook to POST to /api/webhook and generate room activity."}
         </p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Session ID</TableHead>
-              <TableHead>Room Name</TableHead>
-              <TableHead>Started At</TableHead>
-              <TableHead>Ended At</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Participants</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sessions.map((session) => (
-              <TableRow key={session.session_id}>
-                <TableCell className="font-mono text-xs">{session.session_id}</TableCell>
-                <TableCell className="font-medium">{session.room_name}</TableCell>
-                <TableCell>{formatDate(session.started_at)}</TableCell>
-                <TableCell>{formatDate(session.ended_at)}</TableCell>
-                <TableCell>{formatDuration(session.duration_seconds)}</TableCell>
-                <TableCell>{session.participants}</TableCell>
-                <TableCell>
-                  <Badge variant={session.status === "active" ? "default" : "secondary"}>
-                    {session.status}
-                  </Badge>
-                </TableCell>
+        <div className="rounded-xl bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Session ID</TableHead>
+                <TableHead>Room Name</TableHead>
+                <TableHead>Started At</TableHead>
+                <TableHead>Ended At</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Participants</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {sessions.map((session) => (
+                <TableRow key={session.session_id}>
+                  <TableCell className="font-mono text-xs">{session.session_id}</TableCell>
+                  <TableCell className="font-medium">{session.room_name}</TableCell>
+                  <TableCell>{formatDate(session.started_at)}</TableCell>
+                  <TableCell>{formatDate(session.ended_at)}</TableCell>
+                  <TableCell>{formatDuration(session.duration_seconds)}</TableCell>
+                  <TableCell>{session.participants}</TableCell>
+                  <TableCell>
+                    <Badge variant={session.status === "active" ? "default" : "secondary"}>
+                      {session.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   )

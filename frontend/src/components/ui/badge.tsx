@@ -9,11 +9,10 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
-        secondary:
-          "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
+        default: "bg-[#292524] text-[#fafaf9] [a&]:hover:bg-[#1c1917]",
+        secondary: "bg-[#F5F0EB] text-[#44403C] [a&]:hover:bg-[#efe7de]",
         destructive:
-          "bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-destructive text-[#fafaf9] [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
@@ -45,4 +44,4 @@ function Badge({
   )
 }
 
-export { Badge, badgeVariants }
+export { Badge }

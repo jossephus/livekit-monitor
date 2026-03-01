@@ -116,13 +116,16 @@ export default function RoomsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Rooms</h1>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-medium">Rooms</h1>
+          <p className="text-sm text-muted-foreground">Current and recently active LiveKit rooms</p>
+        </div>
         <button
           type="button"
           onClick={fetchRooms}
-          className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -140,43 +143,45 @@ export default function RoomsPage() {
       ) : rooms.length === 0 ? (
         <p className="text-muted-foreground">No active rooms.</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>SID</TableHead>
-              <TableHead>Participants</TableHead>
-              <TableHead>Created At</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rooms.map((room) => (
-              <TableRow key={room.sid}>
-                <TableCell>
-                  <Link
-                    to={`/rooms/${room.name}`}
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {room.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {room.sid}
-                </TableCell>
-                <TableCell>{room.num_participants}</TableCell>
-                <TableCell>{formatCreatedAt(room.creation_time)}</TableCell>
-                <TableCell>
-                  {room.status === "Active" ? (
-                    <Badge variant="default">Active</Badge>
-                  ) : (
-                    <Badge variant="secondary">Inactive</Badge>
-                  )}
-                </TableCell>
+        <div className="rounded-xl bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>SID</TableHead>
+                <TableHead>Participants</TableHead>
+                <TableHead>Created At</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rooms.map((room) => (
+                <TableRow key={room.sid}>
+                  <TableCell>
+                    <Link
+                      to={`/rooms/${room.name}`}
+                      className="font-medium text-foreground underline-offset-4 hover:underline"
+                    >
+                      {room.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {room.sid}
+                  </TableCell>
+                  <TableCell>{room.num_participants}</TableCell>
+                  <TableCell>{formatCreatedAt(room.creation_time)}</TableCell>
+                  <TableCell>
+                    {room.status === "Active" ? (
+                      <Badge variant="default">Active</Badge>
+                    ) : (
+                      <Badge variant="secondary">Inactive</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   )

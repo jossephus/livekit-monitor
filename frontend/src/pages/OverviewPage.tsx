@@ -1,11 +1,5 @@
 import { useEffect, useState, useCallback } from "react"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   DoorOpen,
   Users,
   ArrowUpFromLine,
@@ -24,10 +18,10 @@ const REFRESH_OPTIONS = [
   { label: "5s", value: 5000 },
   { label: "10s", value: 10000 },
   { label: "30s", value: 30000 },
-  { label: "Off", value: 0 },
+  { label: "off", value: 0 },
 ]
 
-const TIME_RANGES = ["Last 1h", "Last 6h", "Last 24h", "Last 7d"]
+const TIME_RANGES = ["1h", "6h", "24h", "7d"]
 
 export default function OverviewPage() {
   const [data, setData] = useState<OverviewData | null>(null)
@@ -86,34 +80,44 @@ export default function OverviewPage() {
     : []
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Overview</h1>
-        <div className="flex items-center gap-3">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm"
-          >
-            {TIME_RANGES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-2xl font-medium">Overview</h1>
+        <div className="flex flex-wrap items-center gap-5 text-sm">
+          <div className="inline-flex items-center gap-1 rounded-full bg-card px-1 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+            {TIME_RANGES.map((range) => (
+              <button
+                key={range}
+                type="button"
+                onClick={() => setTimeRange(range)}
+                className={
+                  timeRange === range
+                    ? "rounded-full px-3 py-1 font-medium text-foreground"
+                    : "rounded-full px-3 py-1 text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                {range}
+              </button>
             ))}
-          </select>
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          </div>
+          <div className="inline-flex items-center gap-2 text-muted-foreground">
             <RefreshCw className="h-3.5 w-3.5" />
-            <select
-              value={refreshInterval}
-              onChange={(e) => setRefreshInterval(Number(e.target.value))}
-              className="rounded-md border bg-background px-2 py-1.5 text-sm"
-            >
+            <div className="inline-flex items-center gap-1 rounded-full bg-card px-1 py-1 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               {REFRESH_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setRefreshInterval(opt.value)}
+                  className={
+                    refreshInterval === opt.value
+                      ? "rounded-full px-3 py-1 font-medium text-foreground"
+                      : "rounded-full px-3 py-1 text-muted-foreground transition-colors hover:text-foreground"
+                  }
+                >
                   {opt.label}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         </div>
       </div>
@@ -124,36 +128,29 @@ export default function OverviewPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-8 w-16 animate-pulse rounded bg-muted" />
-                </CardContent>
-              </Card>
+          ? ["rooms", "participants", "egresses", "ingresses"].map((placeholder) => (
+              <div key={placeholder} className="rounded-xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+                <div className="mt-6 h-12 w-20 animate-pulse rounded bg-muted" />
+              </div>
             ))
           : stats.map((stat) => (
-              <Card key={stat.title}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      {stat.title}
-                    </CardTitle>
-                    <stat.icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">{stat.value}</div>
-                </CardContent>
-              </Card>
+              <div key={stat.title} className="rounded-xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <div className="flex items-start justify-between gap-4">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">{stat.title}</p>
+                  <stat.icon className="h-5 w-5 text-stone-300" />
+                </div>
+                <p className="pt-8 text-5xl font-bold">{stat.value}</p>
+              </div>
             ))}
       </div>
+
+      <section className="rounded-xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Recent events</p>
+        <p className="pt-4 text-sm text-muted-foreground">Event timeline placeholder. Coming in a follow-up task.</p>
+      </section>
     </div>
   )
 }

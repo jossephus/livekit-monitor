@@ -198,16 +198,16 @@ export default function EgressPage() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Egress</h1>
+          <h1 className="text-2xl font-medium">Egress</h1>
           <p className="text-sm text-muted-foreground">Recording and stream export jobs</p>
         </div>
         <button
           type="button"
           onClick={fetchEgresses}
-          className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -220,7 +220,7 @@ export default function EgressPage() {
           value={roomFilter}
           onChange={(event) => setRoomFilter(event.target.value)}
           placeholder="Filter by room name"
-          className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm"
+          className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-3 text-sm"
         />
       </label>
 
@@ -235,38 +235,40 @@ export default function EgressPage() {
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground">No egress jobs found.</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Room</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Destination</TableHead>
-              <TableHead>Started At</TableHead>
-              <TableHead>Duration</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs">{row.id}</TableCell>
-                <TableCell className="font-medium">{row.room}</TableCell>
-                <TableCell className="capitalize">{row.type}</TableCell>
-                <TableCell>
-                  <Badge variant={statusVariant(row.status)} className="capitalize">
-                    {row.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="max-w-[320px] truncate" title={row.destination}>
-                  {row.destination}
-                </TableCell>
-                <TableCell>{row.startedAt}</TableCell>
-                <TableCell>{row.duration}</TableCell>
+        <div className="rounded-xl bg-card shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Room</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Destination</TableHead>
+                <TableHead>Started At</TableHead>
+                <TableHead>Duration</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-mono text-xs">{row.id}</TableCell>
+                  <TableCell className="font-medium">{row.room}</TableCell>
+                  <TableCell className="capitalize">{row.type}</TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(row.status)} className="capitalize">
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-[320px] truncate" title={row.destination}>
+                    {row.destination}
+                  </TableCell>
+                  <TableCell>{row.startedAt}</TableCell>
+                  <TableCell>{row.duration}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   )
