@@ -1,6 +1,6 @@
 # Local LiveKit Test Stack
 
-This compose stack runs local LiveKit + Redis + Egress + Ingress + MinIO so you can place test calls and validate dashboard sessions/history plus egress/ingress jobs.
+This compose stack runs local LiveKit + Redis + Egress + Ingress + MinIO so you can place test calls and validate monitor sessions/history plus egress/ingress jobs.
 
 ## Start Stack
 
@@ -19,7 +19,7 @@ Services will be available at:
 - MinIO Console: `http://localhost:9001` (`minioadmin` / `minioadmin`)
 - RTMP Ingress endpoint base: `rtmp://localhost:1935/live`
 
-## Run Dashboard Against Local LiveKit
+## Run Monitor Against Local LiveKit
 
 From project root:
 
@@ -28,13 +28,13 @@ LIVEKIT_URL=http://localhost:7880 \
 LIVEKIT_API_KEY=devkey \
 LIVEKIT_API_SECRET=secret \
 PORT=3001 \
-SQLITE_PATH=./data/dashboard.db \
+SQLITE_PATH=./data/monitor.db \
 cargo run
 ```
 
 ## Webhook Setup (for Sessions history)
 
-Set LiveKit webhook target to your dashboard endpoint:
+Set LiveKit webhook target to your monitor endpoint:
 
 - `http://host.docker.internal:3001/api/webhook` (Docker Desktop)
 - or `http://<your-host-ip>:3001/api/webhook`

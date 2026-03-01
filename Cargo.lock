@@ -1207,7 +1207,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "livekit-dashboard"
+name = "livekit-monitor"
 version = "0.1.0"
 dependencies = [
  "env_logger",

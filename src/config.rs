@@ -22,7 +22,7 @@ impl Config {
             frontend_dir: env::var("FRONTEND_DIR")
                 .unwrap_or_else(|_| "./frontend/dist".to_string()),
             sqlite_path: env::var("SQLITE_PATH")
-                .unwrap_or_else(|_| "./data/dashboard.db".to_string()),
+                .unwrap_or_else(|_| "./data/monitor.db".to_string()),
         })
     }
 }

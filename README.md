@@ -1,6 +1,6 @@
-# LiveKit Dashboard
+# LiveKit Monitor
 
-Self-hostable dashboard for monitoring a self hosted LiveKit instances.
+Self-hostable monitor for self-hosted LiveKit instances.
 
 ![Overview page](assets/overview.png)
 
@@ -19,7 +19,7 @@ Self-hostable dashboard for monitoring a self hosted LiveKit instances.
 - `LIVEKIT_API_SECRET` (required)
 - `PORT` (optional, default: `3000`)
 - `FRONTEND_DIR` (optional, default: `./frontend/dist`)
-- `SQLITE_PATH` (optional, default: `./data/dashboard.db`)
+- `SQLITE_PATH` (optional, default: `./data/monitor.db`)
 
 ## Local development
 

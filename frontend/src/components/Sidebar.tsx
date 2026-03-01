@@ -15,7 +15,7 @@ export default function Sidebar() {
     <aside className="flex h-screen w-64 flex-col bg-sidebar text-sidebar-foreground">
       <div className="border-sidebar-border border-b px-7 py-8">
         <p className="text-2xl font-light lowercase tracking-[0.08em]">livekit</p>
-        <p className="pt-1 text-xs uppercase tracking-[0.2em] text-sidebar-foreground/45">dashboard</p>
+        <p className="pt-1 text-xs uppercase tracking-[0.2em] text-sidebar-foreground/45">monitor</p>
       </div>
       <nav className="flex-1 space-y-1 px-5 py-8">
         {navItems.map((item) => (
