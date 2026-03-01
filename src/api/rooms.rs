@@ -20,7 +20,7 @@ pub fn routes(
     clients: Arc<LiveKitClients>,
     session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    list_rooms(clients.clone())
+    list_rooms(clients.clone(), session_store.clone())
         .or(list_room_history(session_store.clone()))
         .or(get_room(clients.clone()))
         .or(list_participants(clients.clone()))
@@ -30,10 +30,12 @@ pub fn routes(
 /// GET /api/rooms
 fn list_rooms(
     clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     warp::path!("api" / "rooms")
         .and(warp::get())
         .and(with_clients(clients))
+        .and(with_session_store(session_store))
         .and_then(handle_list_rooms)
 }
 
@@ -77,11 +79,18 @@ fn delete_room(
         .and_then(handle_delete_room)
 }
 
-async fn handle_list_rooms(clients: Arc<LiveKitClients>) -> Result<impl Reply, Rejection> {
+async fn handle_list_rooms(
+    clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
+) -> Result<impl Reply, Rejection> {
     let rooms = clients
         .room
         .list_rooms(vec![])
         .await
+        .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
+
+    session_store
+        .reconcile_rooms_from_live(&rooms)
         .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
 
     Ok(warp::reply::json(&rooms))

@@ -243,6 +243,88 @@ impl SessionStore {
         Ok(records)
     }
 
+    pub fn reconcile_rooms_from_live(&self, rooms: &[proto::Room]) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start sqlite tx: {e}"))?;
+
+        let now = now_epoch_seconds();
+
+        for room in rooms {
+            if room.name.is_empty() {
+                continue;
+            }
+
+            let room_sid = if room.sid.is_empty() {
+                "-".to_string()
+            } else {
+                room.sid.clone()
+            };
+            let created_at = to_optional_timestamp(room.creation_time);
+            let last_event_at = created_at.unwrap_or(now).max(now);
+
+            tx.execute(
+                "
+                INSERT INTO room_history
+                (room_name, room_sid, created_at, last_event_at, status)
+                VALUES (?1, ?2, ?3, ?4, 'active')
+                ON CONFLICT(room_name) DO UPDATE SET
+                    room_sid = CASE
+                        WHEN excluded.room_sid != '-' THEN excluded.room_sid
+                        ELSE room_history.room_sid
+                    END,
+                    created_at = COALESCE(room_history.created_at, excluded.created_at),
+                    last_event_at = CASE
+                        WHEN excluded.last_event_at > room_history.last_event_at THEN excluded.last_event_at
+                        ELSE room_history.last_event_at
+                    END,
+                    status = 'active'
+                ",
+                params![room.name, room_sid, created_at, last_event_at],
+            )
+            .map_err(|e| format!("failed to upsert live room history: {e}"))?;
+        }
+
+        if rooms.is_empty() {
+            tx.execute(
+                "
+                UPDATE room_history
+                SET status = 'inactive', last_event_at = CASE WHEN last_event_at < ?1 THEN ?1 ELSE last_event_at END
+                WHERE status = 'active'
+                ",
+                params![now],
+            )
+            .map_err(|e| format!("failed to mark rooms inactive: {e}"))?;
+        } else {
+            let placeholders = vec!["?"; rooms.len()].join(",");
+            let query = format!(
+                "
+                UPDATE room_history
+                SET status = 'inactive', last_event_at = CASE WHEN last_event_at < ?1 THEN ?1 ELSE last_event_at END
+                WHERE status = 'active' AND room_name NOT IN ({})
+                ",
+                placeholders
+            );
+
+            let mut params_values: Vec<Value> = Vec::with_capacity(rooms.len() + 1);
+            params_values.push(Value::Integer(now));
+            for room in rooms {
+                params_values.push(Value::Text(room.name.clone()));
+            }
+
+            tx.execute(&query, rusqlite::params_from_iter(params_values))
+                .map_err(|e| format!("failed to reconcile inactive rooms: {e}"))?;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("failed to commit sqlite tx: {e}"))?;
+        Ok(())
+    }
+
     pub fn list_sessions(&self, filter: SessionsFilter) -> Result<Vec<SessionRecord>, String> {
         let mut where_clause = String::from(" WHERE 1=1");
         let mut values: Vec<Value> = vec![];
