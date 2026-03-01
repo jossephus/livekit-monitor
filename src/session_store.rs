@@ -52,6 +52,14 @@ pub struct EgressRecord {
     pub details: String,
 }
 
+pub struct RoomHistoryRecord {
+    pub room_name: String,
+    pub room_sid: String,
+    pub created_at: Option<i64>,
+    pub last_event_at: i64,
+    pub status: String,
+}
+
 impl SessionStore {
     pub fn new(path: &str) -> Result<Self, String> {
         if let Some(parent) = Path::new(path).parent() {
@@ -100,6 +108,15 @@ impl SessionStore {
             CREATE INDEX IF NOT EXISTS idx_egress_jobs_room_name ON egress_jobs(room_name);
             CREATE INDEX IF NOT EXISTS idx_egress_jobs_status ON egress_jobs(status);
             CREATE INDEX IF NOT EXISTS idx_egress_jobs_started_at ON egress_jobs(started_at DESC);
+
+            CREATE TABLE IF NOT EXISTS room_history (
+                room_name TEXT PRIMARY KEY,
+                room_sid TEXT NOT NULL DEFAULT '-',
+                created_at INTEGER,
+                last_event_at INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'inactive'
+            );
+            CREATE INDEX IF NOT EXISTS idx_room_history_last_event_at ON room_history(last_event_at DESC);
             ",
         )
         .map_err(|e| format!("failed to initialize sqlite schema: {e}"))?;
@@ -121,6 +138,12 @@ impl SessionStore {
             timestamp = now_epoch_seconds();
         }
         let label = format!("{:?}", event.event).to_lowercase();
+        let room_sid = event
+            .room
+            .as_ref()
+            .map(|r| r.sid.clone())
+            .filter(|sid| !sid.is_empty())
+            .unwrap_or_else(|| "-".to_string());
 
         let participant_identity = event
             .participant
@@ -141,6 +164,8 @@ impl SessionStore {
         let tx = conn
             .transaction()
             .map_err(|e| format!("failed to start sqlite tx: {e}"))?;
+
+        upsert_room_history(&tx, &room_name, &room_sid, &label, timestamp)?;
 
         if label.contains("room_started") {
             create_session(&tx, &room_name, timestamp)?;
@@ -178,6 +203,44 @@ impl SessionStore {
         tx.commit()
             .map_err(|e| format!("failed to commit sqlite tx: {e}"))?;
         Ok(())
+    }
+
+    pub fn list_room_history(&self, limit: Option<u32>) -> Result<Vec<RoomHistoryRecord>, String> {
+        let row_limit = i64::from(limit.unwrap_or(500));
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "
+                SELECT room_name, room_sid, created_at, last_event_at, status
+                FROM room_history
+                ORDER BY last_event_at DESC
+                LIMIT ?1
+                ",
+            )
+            .map_err(|e| format!("failed to prepare room history query: {e}"))?;
+
+        let rows = stmt
+            .query_map(params![row_limit], |row| {
+                Ok(RoomHistoryRecord {
+                    room_name: row.get(0)?,
+                    room_sid: row.get(1)?,
+                    created_at: row.get(2)?,
+                    last_event_at: row.get(3)?,
+                    status: row.get(4)?,
+                })
+            })
+            .map_err(|e| format!("failed to query room history: {e}"))?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|e| format!("failed to map room history row: {e}"))?);
+        }
+
+        Ok(records)
     }
 
     pub fn list_sessions(&self, filter: SessionsFilter) -> Result<Vec<SessionRecord>, String> {
@@ -446,6 +509,54 @@ fn upsert_egress_info(
         ],
     )
     .map_err(|e| format!("failed to upsert egress info: {e}"))?;
+
+    Ok(())
+}
+
+fn upsert_room_history(
+    tx: &rusqlite::Transaction<'_>,
+    room_name: &str,
+    room_sid: &str,
+    label: &str,
+    timestamp: i64,
+) -> Result<(), String> {
+    let status = if label.contains("room_started") || label.contains("participant_joined") {
+        "active"
+    } else if label.contains("room_finished") {
+        "inactive"
+    } else {
+        "unknown"
+    };
+
+    let created_at = if label.contains("room_started") {
+        Some(timestamp)
+    } else {
+        None
+    };
+
+    tx.execute(
+        "
+        INSERT INTO room_history
+        (room_name, room_sid, created_at, last_event_at, status)
+        VALUES (?1, ?2, ?3, ?4, ?5)
+        ON CONFLICT(room_name) DO UPDATE SET
+            room_sid = CASE
+                WHEN excluded.room_sid != '-' THEN excluded.room_sid
+                ELSE room_history.room_sid
+            END,
+            created_at = COALESCE(room_history.created_at, excluded.created_at),
+            last_event_at = CASE
+                WHEN excluded.last_event_at > room_history.last_event_at THEN excluded.last_event_at
+                ELSE room_history.last_event_at
+            END,
+            status = CASE
+                WHEN excluded.status = 'unknown' THEN room_history.status
+                ELSE excluded.status
+            END
+        ",
+        params![room_name, room_sid, created_at, timestamp, status],
+    )
+    .map_err(|e| format!("failed to upsert room history: {e}"))?;
 
     Ok(())
 }

@@ -1,14 +1,27 @@
 use std::sync::Arc;
 
+use serde::Serialize;
 use warp::{Filter, Rejection, Reply};
 
-use super::{with_clients, ApiError};
+use super::{with_clients, with_session_store, ApiError};
 use crate::livekit_client::LiveKitClients;
+use crate::session_store::SessionStore;
+
+#[derive(Serialize)]
+struct RoomHistoryItem {
+    name: String,
+    sid: String,
+    created_at: Option<i64>,
+    last_event_at: i64,
+    status: String,
+}
 
 pub fn routes(
     clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     list_rooms(clients.clone())
+        .or(list_room_history(session_store.clone()))
         .or(get_room(clients.clone()))
         .or(list_participants(clients.clone()))
         .or(delete_room(clients))
@@ -22,6 +35,16 @@ fn list_rooms(
         .and(warp::get())
         .and(with_clients(clients))
         .and_then(handle_list_rooms)
+}
+
+/// GET /api/rooms/history
+fn list_room_history(
+    session_store: Arc<SessionStore>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path!("api" / "rooms" / "history")
+        .and(warp::get())
+        .and(with_session_store(session_store))
+        .and_then(handle_list_room_history)
 }
 
 /// GET /api/rooms/:name
@@ -75,6 +98,25 @@ async fn handle_get_room(name: String, clients: Arc<LiveKitClients>) -> Result<i
         Some(room) => Ok(warp::reply::json(&room)),
         None => Err(warp::reject::not_found()),
     }
+}
+
+async fn handle_list_room_history(session_store: Arc<SessionStore>) -> Result<impl Reply, Rejection> {
+    let rooms = session_store
+        .list_room_history(Some(500))
+        .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
+
+    let payload: Vec<RoomHistoryItem> = rooms
+        .into_iter()
+        .map(|room| RoomHistoryItem {
+            name: room.room_name,
+            sid: room.room_sid,
+            created_at: room.created_at,
+            last_event_at: room.last_event_at,
+            status: room.status,
+        })
+        .collect();
+
+    Ok(warp::reply::json(&payload))
 }
 
 async fn handle_list_participants(

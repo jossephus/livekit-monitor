@@ -22,12 +22,12 @@ interface ActiveRoom {
   num_publishers: number
 }
 
-interface WebhookEvent {
+interface RoomHistoryItem {
+  sid: string
+  name: string
   created_at?: number
-  room?: {
-    sid?: string
-    name?: string
-  }
+  last_event_at: number
+  status: string
 }
 
 interface RoomRow {
@@ -52,9 +52,9 @@ export default function RoomsPage() {
 
   const fetchRooms = useCallback(async () => {
     try {
-      const [roomsRes, eventsRes] = await Promise.all([
+      const [roomsRes, historyRes] = await Promise.all([
         fetch("/api/rooms"),
-        fetch("/api/webhook/events"),
+        fetch("/api/rooms/history"),
       ])
 
       if (!roomsRes.ok) {
@@ -75,18 +75,17 @@ export default function RoomsPage() {
         })
       })
 
-      if (eventsRes.ok) {
-        const events: WebhookEvent[] = await eventsRes.json()
-        events.forEach((event) => {
-          const roomName = event.room?.name
-          if (!roomName || roomMap.has(roomName)) return
+      if (historyRes.ok) {
+        const history: RoomHistoryItem[] = await historyRes.json()
+        history.forEach((room) => {
+          if (!room.name || roomMap.has(room.name)) return
 
-          roomMap.set(roomName, {
-            sid: event.room?.sid ?? "-",
-            name: roomName,
+          roomMap.set(room.name, {
+            sid: room.sid || "-",
+            name: room.name,
             num_participants: 0,
-            creation_time: normalizeTimestamp(event.created_at),
-            status: "Inactive",
+            creation_time: normalizeTimestamp(room.created_at ?? room.last_event_at),
+            status: room.status === "active" ? "Active" : "Inactive",
           })
         })
       }
