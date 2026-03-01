@@ -39,7 +39,7 @@ pub fn routes(
     session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     rooms::routes(clients.clone())
-        .or(egress::routes(clients.clone()))
+        .or(egress::routes(clients.clone(), session_store.clone()))
         .or(ingress::routes(clients.clone()))
         .or(overview::routes(clients))
         .or(sessions::routes(session_store))

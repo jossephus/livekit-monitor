@@ -88,6 +88,13 @@ async fn handle_receive_webhook(
         .handle_webhook_event(&event)
         .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist session event: {e}"))))?;
 
+    if let Some(egress_info) = event.egress_info.clone() {
+        state
+            .session_store
+            .upsert_egress_infos(&[egress_info])
+            .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist egress event: {e}"))))?;
+    }
+
     let mut events = state.events.write().await;
     if events.len() >= MAX_EVENTS {
         events.pop_front();

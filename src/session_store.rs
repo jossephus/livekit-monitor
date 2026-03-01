@@ -30,6 +30,28 @@ pub struct SessionRecord {
     pub status: String,
 }
 
+#[derive(Clone, Default)]
+pub struct EgressFilter {
+    pub search: Option<String>,
+    pub status: Option<String>,
+    pub room_name: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+pub struct EgressRecord {
+    pub egress_id: String,
+    pub room_name: String,
+    pub egress_type: String,
+    pub status: String,
+    pub destination: String,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub updated_at: Option<i64>,
+    pub error: String,
+    pub details: String,
+}
+
 impl SessionStore {
     pub fn new(path: &str) -> Result<Self, String> {
         if let Some(parent) = Path::new(path).parent() {
@@ -61,6 +83,23 @@ impl SessionStore {
                 PRIMARY KEY (session_id, participant_identity),
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS egress_jobs (
+                egress_id TEXT PRIMARY KEY,
+                room_name TEXT NOT NULL,
+                egress_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                destination TEXT NOT NULL,
+                started_at INTEGER,
+                ended_at INTEGER,
+                updated_at INTEGER,
+                error TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '',
+                last_seen_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_egress_jobs_room_name ON egress_jobs(room_name);
+            CREATE INDEX IF NOT EXISTS idx_egress_jobs_status ON egress_jobs(status);
+            CREATE INDEX IF NOT EXISTS idx_egress_jobs_started_at ON egress_jobs(started_at DESC);
             ",
         )
         .map_err(|e| format!("failed to initialize sqlite schema: {e}"))?;
@@ -77,7 +116,10 @@ impl SessionStore {
             .map(|r| r.name.clone())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| "unknown-room".to_string());
-        let timestamp = normalize_timestamp(event.created_at as i64);
+        let mut timestamp = normalize_timestamp(event.created_at as i64);
+        if timestamp == 0 {
+            timestamp = now_epoch_seconds();
+        }
         let label = format!("{:?}", event.event).to_lowercase();
 
         let participant_identity = event
@@ -218,6 +260,194 @@ impl SessionStore {
         }
         Ok(sessions)
     }
+
+    pub fn upsert_egress_infos(&self, infos: &[proto::EgressInfo]) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to start sqlite tx: {e}"))?;
+
+        let now = now_epoch_seconds();
+        for info in infos {
+            upsert_egress_info(&tx, info, now)?;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("failed to commit sqlite tx: {e}"))?;
+        Ok(())
+    }
+
+    pub fn list_egress_history(&self, filter: EgressFilter) -> Result<Vec<EgressRecord>, String> {
+        let mut where_clause = String::from(" WHERE 1=1");
+        let mut values: Vec<Value> = vec![];
+
+        if let Some(status) = filter.status {
+            where_clause.push_str(" AND e.status = ?");
+            values.push(Value::Text(status));
+        }
+
+        if let Some(room_name) = filter.room_name {
+            where_clause.push_str(" AND e.room_name = ?");
+            values.push(Value::Text(room_name));
+        }
+
+        if let Some(search) = filter.search {
+            where_clause.push_str(
+                " AND (e.egress_id LIKE ? OR e.room_name LIKE ? OR e.destination LIKE ?)",
+            );
+            let pattern = format!("%{}%", search);
+            values.push(Value::Text(pattern.clone()));
+            values.push(Value::Text(pattern.clone()));
+            values.push(Value::Text(pattern));
+        }
+
+        let limit = i64::from(filter.limit.unwrap_or(200));
+        let offset = i64::from(filter.offset.unwrap_or(0));
+        values.push(Value::Integer(limit));
+        values.push(Value::Integer(offset));
+
+        let query = format!(
+            "
+            SELECT
+                e.egress_id,
+                e.room_name,
+                e.egress_type,
+                e.status,
+                e.destination,
+                e.started_at,
+                e.ended_at,
+                e.updated_at,
+                e.error,
+                e.details
+            FROM egress_jobs e
+            {}
+            ORDER BY COALESCE(e.started_at, e.last_seen_at) DESC
+            LIMIT ? OFFSET ?
+            ",
+            where_clause
+        );
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        let mut stmt = conn
+            .prepare(&query)
+            .map_err(|e| format!("failed to prepare egress query: {e}"))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok(EgressRecord {
+                    egress_id: row.get(0)?,
+                    room_name: row.get(1)?,
+                    egress_type: row.get(2)?,
+                    status: row.get(3)?,
+                    destination: row.get(4)?,
+                    started_at: row.get(5)?,
+                    ended_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    error: row.get(8)?,
+                    details: row.get(9)?,
+                })
+            })
+            .map_err(|e| format!("failed to query egress history: {e}"))?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|e| format!("failed to map egress row: {e}"))?);
+        }
+
+        Ok(records)
+    }
+}
+
+fn upsert_egress_info(
+    tx: &rusqlite::Transaction<'_>,
+    info: &proto::EgressInfo,
+    now: i64,
+) -> Result<(), String> {
+    let egress_id = info.egress_id.clone();
+    if egress_id.is_empty() {
+        return Ok(());
+    }
+
+    let room_name = if !info.room_name.is_empty() {
+        info.room_name.clone()
+    } else {
+        "unknown-room".to_string()
+    };
+
+    let status = format!("{:?}", info.status()).to_lowercase();
+    let egress_type = format!("{:?}", info.source_type()).to_lowercase();
+
+    let destination = info
+        .file_results
+        .first()
+        .map(|f| {
+            if !f.location.is_empty() {
+                f.location.clone()
+            } else {
+                f.filename.clone()
+            }
+        })
+        .filter(|d| !d.is_empty())
+        .or_else(|| {
+            info.stream_results.first().and_then(|s| {
+                if s.url.is_empty() {
+                    None
+                } else {
+                    Some(s.url.clone())
+                }
+            })
+        })
+        .or_else(|| {
+            info.segment_results
+                .first()
+                .map(|s| s.playlist_location.clone())
+        })
+        .unwrap_or_else(|| "-".to_string());
+
+    let started_at = to_optional_timestamp(info.started_at as i64);
+    let ended_at = to_optional_timestamp(info.ended_at as i64);
+    let updated_at = to_optional_timestamp(info.updated_at as i64);
+
+    tx.execute(
+        "
+        INSERT INTO egress_jobs
+        (egress_id, room_name, egress_type, status, destination, started_at, ended_at, updated_at, error, details, last_seen_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        ON CONFLICT(egress_id) DO UPDATE SET
+            room_name = excluded.room_name,
+            egress_type = excluded.egress_type,
+            status = excluded.status,
+            destination = excluded.destination,
+            started_at = COALESCE(excluded.started_at, egress_jobs.started_at),
+            ended_at = COALESCE(excluded.ended_at, egress_jobs.ended_at),
+            updated_at = COALESCE(excluded.updated_at, egress_jobs.updated_at),
+            error = excluded.error,
+            details = excluded.details,
+            last_seen_at = excluded.last_seen_at
+        ",
+        params![
+            egress_id,
+            room_name,
+            egress_type,
+            status,
+            destination,
+            started_at,
+            ended_at,
+            updated_at,
+            info.error,
+            info.details,
+            now
+        ],
+    )
+    .map_err(|e| format!("failed to upsert egress info: {e}"))?;
+
+    Ok(())
 }
 
 fn create_session(
@@ -283,11 +513,24 @@ fn now_epoch_seconds() -> i64 {
 
 fn normalize_timestamp(raw: i64) -> i64 {
     if raw <= 0 {
-        return now_epoch_seconds();
+        return 0;
     }
     if raw > 1_000_000_000_000 {
-        raw / 1000
+        if raw > 1_000_000_000_000_000 {
+            raw / 1_000_000_000
+        } else {
+            raw / 1000
+        }
     } else {
         raw
+    }
+}
+
+fn to_optional_timestamp(raw: i64) -> Option<i64> {
+    let ts = normalize_timestamp(raw);
+    if ts > 0 {
+        Some(ts)
+    } else {
+        None
     }
 }
