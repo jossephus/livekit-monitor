@@ -1,6 +1,6 @@
 # LiveKit Monitor
 
-Self-hostable monitor for self-hosted LiveKit instances.
+A self-hosted dashboard for monitoring LiveKit instances.
 
 ![Overview page](assets/overview.png)
 
@@ -11,6 +11,31 @@ Self-hostable monitor for self-hosted LiveKit instances.
 - Sessions history (webhook-backed)
 - Egress and ingress pages
 - Settings page with connection info
+
+## Docker image (Docker Hub)
+
+The public image is available on Docker Hub:
+
+- `jossephus/livekit-monitor:latest`
+
+Pull it directly:
+
+```bash
+docker pull jossephus/livekit-monitor:latest
+```
+
+Run it locally:
+
+```bash
+docker run --rm -p 3001:3001 \
+  -e LIVEKIT_URL=http://host.docker.internal:7880 \
+  -e LIVEKIT_API_KEY=devkey \
+  -e LIVEKIT_API_SECRET=secret \
+  -e PORT=3001 \
+  -e SQLITE_PATH=/data/monitor.db \
+  -v livekit-monitor-data:/data \
+  jossephus/livekit-monitor:latest
+```
 
 ## Environment variables
 
