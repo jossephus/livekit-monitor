@@ -20,7 +20,6 @@
       };
 
       rustToolchain = pkgs.rust-bin.stable.latest.default;
-      nodejs = pkgs.nodejs_20;
 
       # Linux pkgs for cross-compiling the Docker image
       linuxSystem =
@@ -33,8 +32,6 @@
         system = linuxSystem;
         inherit overlays;
       };
-      linuxRustToolchain = linuxPkgs.rust-bin.stable.latest.default;
-
       cleanSrc = pkgs.lib.cleanSourceWith {
         src = ./.;
         filter = path: type:
@@ -50,20 +47,14 @@
             && !pkgs.lib.hasSuffix ".png" baseName;
       };
 
-      mkMonitor = {
-        rustPlatform,
-        rustTool,
-        makeWrapper,
-        openssl,
-        pkg-config,
-      }:
-        rustPlatform.buildRustPackage {
+      mkMonitor = buildPkgs:
+        buildPkgs.rustPlatform.buildRustPackage {
           pname = "livekit-dashboard";
           version = "0.1.0";
           src = cleanSrc;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [rustTool makeWrapper pkg-config];
-          buildInputs = [openssl];
+          nativeBuildInputs = [buildPkgs.rust-bin.stable.latest.default buildPkgs.makeWrapper buildPkgs.pkg-config];
+          buildInputs = [buildPkgs.openssl];
           postInstall = ''
             mkdir -p $out/share/livekit-dashboard/frontend
             cp -r ${frontendDist} $out/share/livekit-dashboard/frontend/dist
@@ -85,25 +76,16 @@
         '';
       };
 
-      livekitMonitor = mkMonitor {
-        inherit (pkgs) rustPlatform makeWrapper openssl pkg-config;
-        rustTool = rustToolchain;
-      };
-
-      linuxMonitor = mkMonitor {
-        inherit (linuxPkgs) rustPlatform makeWrapper openssl pkg-config;
-        rustTool = linuxRustToolchain;
-      };
+      monitor = mkMonitor linuxPkgs;
 
       dockerImage = linuxPkgs.dockerTools.buildLayeredImage {
         name = "livekit-monitor";
         tag = "latest";
 
         contents = [
-          linuxMonitor
+          monitor
           linuxPkgs.cacert
           linuxPkgs.iana-etc
-          linuxPkgs.bashInteractive
         ];
 
         config = {
@@ -123,7 +105,7 @@
       };
     in {
       packages = {
-        default = livekitMonitor;
+        default = monitor;
         docker = dockerImage;
       };
 
@@ -132,7 +114,7 @@
           rustToolchain
           pkgs.pkg-config
           pkgs.openssl
-          nodejs
+          pkgs.nodejs_20
         ];
 
         shellHook = ''

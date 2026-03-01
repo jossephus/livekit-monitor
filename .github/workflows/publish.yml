@@ -1,0 +1,47 @@
+name: Publish Docker Image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  docker-publish:
+    name: Build with Nix and push to Docker Hub
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Build Docker image with Nix
+        run: nix build .#docker -L
+
+      - name: Load Docker image tar
+        run: docker load < result
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag image
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          docker tag livekit-monitor:latest jossephus/livekit-monitor:latest
+          docker tag livekit-monitor:latest jossephus/livekit-monitor:${VERSION_TAG}
+
+      - name: Push image tags
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          docker push jossephus/livekit-monitor:latest
+          docker push jossephus/livekit-monitor:${VERSION_TAG}
