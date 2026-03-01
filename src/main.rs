@@ -12,6 +12,11 @@ use session_store::SessionStore;
 use api::settings::SettingsInfo;
 use warp::Filter;
 
+const FRONTEND_DIR: &str = match option_env!("FRONTEND_DIR") {
+    Some(path) => path,
+    None => "./frontend/dist",
+};
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -47,7 +52,7 @@ async fn main() {
 
     let api_routes = api::routes(clients, webhook_state, session_store, settings_info);
 
-    let frontend_dir = PathBuf::from(&config.frontend_dir);
+    let frontend_dir = PathBuf::from(FRONTEND_DIR);
     let index_path = frontend_dir.join("index.html");
 
     let static_files = warp::fs::dir(frontend_dir);
@@ -76,7 +81,7 @@ async fn main() {
     log::info!(
         "Starting server on port {} (frontend: {}, sqlite: {})",
         config.port,
-        config.frontend_dir,
+        FRONTEND_DIR,
         config.sqlite_path,
     );
     warp::serve(routes)

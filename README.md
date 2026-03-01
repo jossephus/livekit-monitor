@@ -43,7 +43,6 @@ docker run --rm -p 3001:3001 \
 - `LIVEKIT_API_KEY` (required)
 - `LIVEKIT_API_SECRET` (required)
 - `PORT` (optional, default: `3000`)
-- `FRONTEND_DIR` (optional, default: `./frontend/dist`)
 - `SQLITE_PATH` (optional, default: `./data/monitor.db`)
 
 ## Local development
