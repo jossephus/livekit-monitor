@@ -1,0 +1,144 @@
+{
+  description = "LiveKit monitor with Rust/Node dev shell and Docker image";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+  };
+
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    rust-overlay,
+  }:
+    flake-utils.lib.eachDefaultSystem (system: let
+      overlays = [rust-overlay.overlays.default];
+      pkgs = import nixpkgs {
+        inherit system overlays;
+      };
+
+      rustToolchain = pkgs.rust-bin.stable.latest.default;
+      nodejs = pkgs.nodejs_20;
+
+      # Linux pkgs for cross-compiling the Docker image
+      linuxSystem =
+        if system == "aarch64-darwin"
+        then "aarch64-linux"
+        else if system == "x86_64-darwin"
+        then "x86_64-linux"
+        else system;
+      linuxPkgs = import nixpkgs {
+        system = linuxSystem;
+        inherit overlays;
+      };
+      linuxRustToolchain = linuxPkgs.rust-bin.stable.latest.default;
+
+      cleanSrc = pkgs.lib.cleanSourceWith {
+        src = ./.;
+        filter = path: type:
+          let
+            baseName = builtins.baseNameOf path;
+          in
+            baseName != "target"
+            && baseName != "node_modules"
+            && baseName != ".git"
+            && baseName != ".npm"
+            && baseName != "data"
+            && baseName != ".agents"
+            && !pkgs.lib.hasSuffix ".png" baseName;
+      };
+
+      mkMonitor = {
+        rustPlatform,
+        rustTool,
+        makeWrapper,
+        openssl,
+        pkg-config,
+      }:
+        rustPlatform.buildRustPackage {
+          pname = "livekit-dashboard";
+          version = "0.1.0";
+          src = cleanSrc;
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = [rustTool makeWrapper pkg-config];
+          buildInputs = [openssl];
+          postInstall = ''
+            mkdir -p $out/share/livekit-dashboard/frontend
+            cp -r ${frontendDist} $out/share/livekit-dashboard/frontend/dist
+
+            mv $out/bin/livekit-monitor $out/bin/livekit-dashboard-bin
+            makeWrapper $out/bin/livekit-dashboard-bin $out/bin/livekit-dashboard \
+              --set-default FRONTEND_DIR $out/share/livekit-dashboard/frontend/dist
+          '';
+        };
+
+      frontendDist = pkgs.buildNpmPackage {
+        pname = "livekit-dashboard-frontend";
+        version = "0.1.0";
+        src = ./frontend;
+        npmDepsHash = "sha256-0iipMhang1Vnnm9aqsy1VxLm/Hjj6/5aA96bFNDojxE=";
+        installPhase = ''
+          mkdir -p $out
+          cp -r dist/* $out/
+        '';
+      };
+
+      livekitMonitor = mkMonitor {
+        inherit (pkgs) rustPlatform makeWrapper openssl pkg-config;
+        rustTool = rustToolchain;
+      };
+
+      linuxMonitor = mkMonitor {
+        inherit (linuxPkgs) rustPlatform makeWrapper openssl pkg-config;
+        rustTool = linuxRustToolchain;
+      };
+
+      dockerImage = linuxPkgs.dockerTools.buildLayeredImage {
+        name = "livekit-monitor";
+        tag = "latest";
+
+        contents = [
+          linuxMonitor
+          linuxPkgs.cacert
+          linuxPkgs.iana-etc
+          linuxPkgs.bashInteractive
+        ];
+
+        config = {
+          Cmd = ["/bin/livekit-dashboard"];
+          Env = [
+            "PORT=3000"
+            "SQLITE_PATH=/data/monitor.db"
+            "FRONTEND_DIR=${frontendDist}"
+          ];
+          ExposedPorts = {
+            "3000/tcp" = {};
+          };
+          Volumes = {
+            "/data" = {};
+          };
+        };
+      };
+    in {
+      packages = {
+        default = livekitMonitor;
+        docker = dockerImage;
+      };
+
+      devShells.default = pkgs.mkShell {
+        packages = [
+          rustToolchain
+          pkgs.pkg-config
+          pkgs.openssl
+          nodejs
+        ];
+
+        shellHook = ''
+          export RUST_BACKTRACE=1
+          export PATH="$PWD/frontend/node_modules/.bin:$PATH"
+        '';
+      };
+    });
+}
