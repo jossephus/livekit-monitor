@@ -3,6 +3,13 @@ import { RefreshCw } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  THEME_CHANGE_EVENT,
+  applyTheme,
+  getStoredThemeMode,
+  setThemeMode,
+  type ThemeMode,
+} from "@/lib/theme"
 
 interface SettingsResponse {
   livekit_url: string
@@ -16,6 +23,7 @@ export default function SettingsPage() {
   const [status, setStatus] = useState<"checking" | "connected" | "disconnected">("checking")
   const [error, setError] = useState<string | null>(null)
   const [lastChecked, setLastChecked] = useState<string>("-")
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode())
 
   const checkConnection = useCallback(async () => {
     setStatus("checking")
@@ -55,6 +63,33 @@ export default function SettingsPage() {
     const id = setInterval(checkConnection, REFRESH_INTERVAL)
     return () => clearInterval(id)
   }, [checkConnection])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const handleChange = () => {
+      if (themeMode === "system") {
+        applyTheme("system")
+      }
+    }
+
+    mediaQuery.addEventListener("change", handleChange)
+    return () => mediaQuery.removeEventListener("change", handleChange)
+  }, [themeMode])
+
+  useEffect(() => {
+    const handleThemeChange = (event: Event) => {
+      const customEvent = event as CustomEvent<ThemeMode>
+      setThemeModeState(customEvent.detail)
+    }
+
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener)
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange as EventListener)
+  }, [])
+
+  const onThemeChange = (mode: ThemeMode) => {
+    setThemeModeState(mode)
+    setThemeMode(mode)
+  }
 
   return (
     <div className="space-y-5">
@@ -98,6 +133,33 @@ export default function SettingsPage() {
               {status}
             </Badge>
             <span className="text-sm text-muted-foreground">Last checked: {lastChecked}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-medium uppercase tracking-[0.14em] text-muted-foreground">Appearance</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Theme mode</p>
+            <div className="mt-2 inline-flex rounded-md border border-input bg-muted/30 p-1">
+              {(["light", "dark", "system"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onThemeChange(mode)}
+                  className={`rounded px-3 py-1.5 text-sm capitalize transition-colors ${
+                    themeMode === mode
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
