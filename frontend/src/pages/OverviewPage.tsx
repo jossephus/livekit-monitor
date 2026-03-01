@@ -14,6 +14,17 @@ interface OverviewData {
   active_ingresses: number
 }
 
+interface WebhookEvent {
+  event?: string
+  created_at?: number
+  room?: {
+    name?: string
+  }
+  participant?: {
+    identity?: string
+  }
+}
+
 const REFRESH_OPTIONS = [
   { label: "5s", value: 5000 },
   { label: "10s", value: 10000 },
@@ -25,6 +36,7 @@ const TIME_RANGES = ["1h", "6h", "24h", "7d"]
 
 export default function OverviewPage() {
   const [data, setData] = useState<OverviewData | null>(null)
+  const [events, setEvents] = useState<WebhookEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshInterval, setRefreshInterval] = useState(10000)
@@ -32,10 +44,20 @@ export default function OverviewPage() {
 
   const fetchOverview = useCallback(async () => {
     try {
-      const res = await fetch("/api/overview")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
-      setData(json)
+      const [overviewRes, eventsRes] = await Promise.all([
+        fetch("/api/overview"),
+        fetch("/api/webhook/events"),
+      ])
+
+      if (!overviewRes.ok) throw new Error(`HTTP ${overviewRes.status}`)
+      const overviewJson = await overviewRes.json()
+      setData(overviewJson)
+
+      if (eventsRes.ok) {
+        const eventsJson: WebhookEvent[] = await eventsRes.json()
+        setEvents(eventsJson)
+      }
+
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch")
@@ -78,6 +100,19 @@ export default function OverviewPage() {
         },
       ]
     : []
+
+  function normalizeTimestamp(raw?: number): number {
+    if (!raw) return 0
+    return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : raw
+  }
+
+  function formatCreatedAt(raw?: number): string {
+    const ts = normalizeTimestamp(raw)
+    if (!ts) return "-"
+    return new Date(ts * 1000).toLocaleString()
+  }
+
+  const recentEvents = [...events].reverse().slice(0, 8)
 
   return (
     <div className="space-y-8">
@@ -149,7 +184,29 @@ export default function OverviewPage() {
 
       <section className="rounded-xl bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Recent events</p>
-        <p className="pt-4 text-sm text-muted-foreground">Event timeline placeholder. Coming in a follow-up task.</p>
+        <div className="pt-4">
+          {recentEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No recent webhook events yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentEvents.map((event, index) => (
+                <div
+                  key={`${event.event ?? "event"}-${event.created_at ?? 0}-${index}`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#A8A29E]" />
+                    <p className="truncate text-sm text-foreground">
+                      {(event.event ?? "unknown_event").replaceAll("_", " ")}
+                    </p>
+                    <span className="text-xs text-muted-foreground">{event.room?.name ?? "-"}</span>
+                  </div>
+                  <p className="font-mono text-xs text-muted-foreground">{formatCreatedAt(event.created_at)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
     </div>
   )
