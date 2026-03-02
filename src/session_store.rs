@@ -670,6 +670,30 @@ impl SessionStore {
         }
         Ok(records)
     }
+
+    pub fn clear_table(&self, group: &str) -> Result<u64, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+
+        let tables: Vec<&str> = match group {
+            "sessions" => vec!["session_participants", "sessions"],
+            "rooms" => vec!["room_participants", "room_details", "room_history"],
+            "egress" => vec!["egress_jobs"],
+            _ => return Err(format!("unknown table group: {group}")),
+        };
+
+        let mut total = 0u64;
+        for table in tables {
+            let deleted = conn
+                .execute(&format!("DELETE FROM {table}"), [])
+                .map_err(|e| format!("failed to clear {table}: {e}"))?;
+            total += deleted as u64;
+        }
+
+        Ok(total)
+    }
 }
 
 fn upsert_egress_info(

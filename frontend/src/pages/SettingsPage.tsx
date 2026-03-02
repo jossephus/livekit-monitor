@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, Trash2, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +16,14 @@ interface SettingsResponse {
   api_key: string
 }
 
+type TableGroup = "sessions" | "rooms" | "egress"
+
+const TABLE_GROUPS: { group: TableGroup; label: string; description: string }[] = [
+  { group: "sessions", label: "Sessions", description: "Session history and participant join records" },
+  { group: "rooms", label: "Rooms", description: "Room history, details, and participant snapshots" },
+  { group: "egress", label: "Egress", description: "Egress job history and status records" },
+]
+
 const REFRESH_INTERVAL = 15000
 
 export default function SettingsPage() {
@@ -24,6 +32,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastChecked, setLastChecked] = useState<string>("-")
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode())
+  const [confirmingClear, setConfirmingClear] = useState<TableGroup | null>(null)
+  const [clearingGroup, setClearingGroup] = useState<TableGroup | null>(null)
+  const [clearResult, setClearResult] = useState<{ group: TableGroup; deleted: number } | null>(null)
 
   const checkConnection = useCallback(async () => {
     setStatus("checking")
@@ -89,6 +100,25 @@ export default function SettingsPage() {
   const onThemeChange = (mode: ThemeMode) => {
     setThemeModeState(mode)
     setThemeMode(mode)
+  }
+
+  const clearTable = async (group: TableGroup) => {
+    setClearingGroup(group)
+    setClearResult(null)
+    try {
+      const res = await fetch(`/api/clear/${group}`, { method: "DELETE" })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setClearResult({ group, deleted: data.deleted ?? 0 })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear data")
+    } finally {
+      setClearingGroup(null)
+      setConfirmingClear(null)
+    }
   }
 
   return (
@@ -180,6 +210,70 @@ export default function SettingsPage() {
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">API secret</p>
             <p className="font-mono text-sm">Hidden by design</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-medium uppercase tracking-[0.14em] text-muted-foreground">Data management</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Clear stored data by category. This deletes all rows from the selected tables but keeps the schema intact.
+          </p>
+
+          {clearResult && (
+            <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+              Cleared {clearResult.deleted} row{clearResult.deleted !== 1 ? "s" : ""} from {clearResult.group} tables.
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {TABLE_GROUPS.map(({ group, label, description }) => (
+              <div key={group} className="flex items-center justify-between rounded-md border border-input p-3">
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+                {confirmingClear === group ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-destructive">Are you sure?</span>
+                    <button
+                      type="button"
+                      onClick={() => clearTable(group)}
+                      disabled={clearingGroup === group}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
+                    >
+                      {clearingGroup === group ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : null}
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingClear(null)}
+                      disabled={clearingGroup === group}
+                      className="rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClearResult(null)
+                      setConfirmingClear(group)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/50 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -51,7 +51,7 @@ pub fn routes(
         .or(egress::routes(clients.clone(), session_store.clone()))
         .or(ingress::routes(clients.clone()))
         .or(overview::routes(clients))
-        .or(settings::routes(settings_info))
+        .or(settings::routes(settings_info, session_store.clone()))
         .or(sessions::routes(session_store))
         .or(webhook::routes(webhook_state))
 }
