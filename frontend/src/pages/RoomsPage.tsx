@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { apiUrl } from "@/lib/basepath"
 
 interface ActiveRoom {
   sid: string
@@ -53,8 +54,8 @@ export default function RoomsPage() {
   const fetchRooms = useCallback(async () => {
     try {
       const [roomsRes, historyRes] = await Promise.all([
-        fetch("/api/rooms"),
-        fetch("/api/rooms/history"),
+        fetch(apiUrl("/api/rooms")),
+        fetch(apiUrl("/api/rooms/history")),
       ])
 
       if (!roomsRes.ok) {

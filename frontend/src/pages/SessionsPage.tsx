@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { apiUrl } from "@/lib/basepath"
 
 interface SessionRow {
   session_id: string
@@ -55,7 +56,7 @@ export default function SessionsPage() {
       params.set("limit", "500")
 
       const qs = params.toString()
-      const url = qs.length > 0 ? `/api/sessions?${qs}` : "/api/sessions"
+      const url = qs.length > 0 ? apiUrl(`/api/sessions?${qs}`) : apiUrl("/api/sessions")
       const res = await fetch(url)
       if (!res.ok) {
         throw new Error(`Failed to fetch sessions: HTTP ${res.status}`)

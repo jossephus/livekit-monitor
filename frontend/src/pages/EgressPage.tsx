@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { apiUrl } from "@/lib/basepath"
 
 interface EgressInfo {
   egress_id?: string
@@ -148,7 +149,7 @@ export default function EgressPage() {
       if (roomFilter.trim()) params.set("room_name", roomFilter.trim())
       params.set("limit", "500")
       const qs = params.toString()
-      const url = qs.length ? `/api/egress/history?${qs}` : "/api/egress/history"
+      const url = qs.length ? apiUrl(`/api/egress/history?${qs}`) : apiUrl("/api/egress/history")
 
       const response = await fetch(url)
       if (!response.ok) {

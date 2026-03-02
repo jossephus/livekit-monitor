@@ -10,6 +10,7 @@ import {
   setThemeMode,
   type ThemeMode,
 } from "@/lib/theme"
+import { apiUrl } from "@/lib/basepath"
 
 interface SettingsResponse {
   livekit_url: string
@@ -40,8 +41,8 @@ export default function SettingsPage() {
     setStatus("checking")
     try {
       const [settingsRes, overviewRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/overview"),
+        fetch(apiUrl("/api/settings")),
+        fetch(apiUrl("/api/overview")),
       ])
 
       if (!settingsRes.ok) {
@@ -106,7 +107,7 @@ export default function SettingsPage() {
     setClearingGroup(group)
     setClearResult(null)
     try {
-      const res = await fetch(`/api/clear/${group}`, { method: "DELETE" })
+      const res = await fetch(apiUrl(`/api/clear/${group}`), { method: "DELETE" })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Request failed" }))
         throw new Error(body.error || `HTTP ${res.status}`)

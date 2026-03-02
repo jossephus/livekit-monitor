@@ -49,6 +49,22 @@ fn mime_from_path(path: &str) -> &'static str {
     }
 }
 
+/// Build the index.html content with the base path injected as a global variable.
+fn build_index_html(base_path: &str) -> Vec<u8> {
+    let raw = FRONTEND_DIR
+        .get_file("index.html")
+        .map(|f| String::from_utf8_lossy(f.contents()).to_string())
+        .unwrap_or_else(|| "<!-- index.html not found -->".to_string());
+
+    // Inject a script tag before </head> that sets window.__BASE_PATH__
+    let script = format!(
+        r#"<script>window.__BASE_PATH__ = "{}";</script>"#,
+        base_path
+    );
+    let html = raw.replace("</head>", &format!("{}\n</head>", script));
+    html.into_bytes()
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -62,6 +78,10 @@ async fn main() {
         config.livekit_url,
         config.api_key
     );
+
+    if !config.base_path.is_empty() {
+        log::info!("Base path: {}", config.base_path);
+    }
 
     let clients = Arc::new(LiveKitClients::new(
         &config.livekit_url,
@@ -100,14 +120,12 @@ async fn main() {
         }
     });
 
-    let index_html = FRONTEND_DIR
-        .get_file("index.html")
-        .map(|f| f.contents())
-        .unwrap_or(b"<!-- index.html not found -->");
+    let index_html = build_index_html(&config.base_path);
 
     let spa_fallback = warp::any()
         .and(warp::path::full())
         .and_then(move |path: warp::path::FullPath| {
+            let index = index_html.clone();
             async move {
                 if path.as_str().starts_with("/api/") {
                     Err(warp::reject::not_found())
@@ -115,7 +133,7 @@ async fn main() {
                     Ok::<_, warp::Rejection>(
                         warp::http::Response::builder()
                             .header(CONTENT_TYPE, "text/html; charset=utf-8")
-                            .body(index_html.to_vec())
+                            .body(index)
                             .unwrap(),
                     )
                 }

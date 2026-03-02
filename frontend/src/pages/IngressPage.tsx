@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { apiUrl } from "@/lib/basepath"
 
 interface IngressInfo {
   ingress_id?: string
@@ -92,7 +93,7 @@ export default function IngressPage() {
       const params = new URLSearchParams()
       if (roomFilter.trim()) params.set("room_name", roomFilter.trim())
       const query = params.toString()
-      const url = query.length > 0 ? `/api/ingress?${query}` : "/api/ingress"
+      const url = query.length > 0 ? apiUrl(`/api/ingress?${query}`) : apiUrl("/api/ingress")
 
       const response = await fetch(url)
       if (!response.ok) {

@@ -6,6 +6,7 @@ import {
   ArrowDownToLine,
   RefreshCw,
 } from "lucide-react"
+import { apiUrl } from "@/lib/basepath"
 
 interface OverviewData {
   total_rooms: number
@@ -45,8 +46,8 @@ export default function OverviewPage() {
   const fetchOverview = useCallback(async () => {
     try {
       const [overviewRes, eventsRes] = await Promise.all([
-        fetch("/api/overview"),
-        fetch("/api/webhook/events"),
+        fetch(apiUrl("/api/overview")),
+        fetch(apiUrl("/api/webhook/events")),
       ])
 
       if (!overviewRes.ok) throw new Error(`HTTP ${overviewRes.status}`)

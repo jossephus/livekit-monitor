@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { apiUrl } from "@/lib/basepath"
 
 interface Room {
   sid: string
@@ -109,8 +110,8 @@ export default function RoomDetailPage() {
     try {
       const encoded = encodeURIComponent(name)
       const [roomRes, participantsRes] = await Promise.all([
-        fetch(`/api/rooms/${encoded}`),
-        fetch(`/api/rooms/${encoded}/participants`),
+        fetch(apiUrl(`/api/rooms/${encoded}`)),
+        fetch(apiUrl(`/api/rooms/${encoded}/participants`)),
       ])
 
       if (!roomRes.ok) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Pause, Play, Trash2 } from "lucide-react"
+import { apiUrl } from "@/lib/basepath"
 
 interface WebhookEvent {
   event?: string
@@ -58,7 +59,7 @@ export default function LiveEventsPage() {
 
   // Load existing events on mount
   useEffect(() => {
-    fetch("/api/webhook/events")
+    fetch(apiUrl("/api/webhook/events"))
       .then((res) => res.json())
       .then((data: WebhookEvent[]) => setEvents(data))
       .catch(() => {})
@@ -66,7 +67,7 @@ export default function LiveEventsPage() {
 
   // Connect SSE for live events
   useEffect(() => {
-    const es = new EventSource("/api/webhook/events/stream")
+    const es = new EventSource(apiUrl("/api/webhook/events/stream"))
 
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
