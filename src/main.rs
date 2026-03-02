@@ -49,31 +49,32 @@ fn mime_from_path(path: &str) -> &'static str {
     }
 }
 
+/// Strip the base_path prefix from a path string.
+fn strip_base<'a>(base_path: &str, full_path: &'a str) -> &'a str {
+    if !base_path.is_empty() {
+        if let Some(rest) = full_path.strip_prefix(base_path) {
+            return rest.trim_start_matches('/');
+        }
+    }
+    full_path.trim_start_matches('/')
+}
+
 /// Build the index.html content with the base path injected.
-///
-/// When BASE_PATH is set (e.g. "/livekit-monitor"), this:
-/// 1. Injects `window.__BASE_PATH__` for the React app (router basename + API calls)
-/// 2. Rewrites asset paths: `"/assets/..."` → `"/livekit-monitor/assets/..."`
-///    so the browser fetches JS/CSS from the correct reverse-proxy path
 fn build_index_html(base_path: &str) -> Vec<u8> {
     let raw = FRONTEND_DIR
         .get_file("index.html")
         .map(|f| String::from_utf8_lossy(f.contents()).to_string())
         .unwrap_or_else(|| "<!-- index.html not found -->".to_string());
 
-    // Inject a script tag before </head> that sets window.__BASE_PATH__
     let script = format!(
         r#"<script>window.__BASE_PATH__ = "{}";</script>"#,
         base_path
     );
     let mut html = raw.replace("</head>", &format!("{}\n</head>", script));
 
-    // Rewrite absolute asset references so they go through the reverse proxy
     if !base_path.is_empty() {
-        // Rewrite href="/assets/..." and src="/assets/..."
         html = html.replace("href=\"/assets/", &format!("href=\"{}/assets/", base_path));
         html = html.replace("src=\"/assets/", &format!("src=\"{}/assets/", base_path));
-        // Rewrite the favicon and other root-relative paths
         html = html.replace("href=\"/vite.svg\"", &format!("href=\"{}/vite.svg\"", base_path));
     }
 
@@ -117,32 +118,53 @@ async fn main() {
         api_key: config.api_key.clone(),
     });
 
-    let api_routes = api::routes(clients, webhook_state, session_store, settings_info);
+    let api_routes = api::routes(
+        clients.clone(),
+        webhook_state.clone(),
+        session_store.clone(),
+        settings_info.clone(),
+    );
 
-    let static_files = warp::path::tail().and_then(|tail: warp::path::Tail| async move {
-        let path = tail.as_str();
-        match FRONTEND_DIR.get_file(path) {
-            Some(file) => {
-                let mime = mime_from_path(path);
-                Ok::<_, warp::Rejection>(
-                    warp::http::Response::builder()
-                        .header(CONTENT_TYPE, mime)
-                        .body(file.contents().to_vec())
-                        .unwrap(),
-                )
+    // Static files — strips base_path prefix before lookup in embedded dir
+    let base_path_for_static = config.base_path.clone();
+    let static_files = warp::get()
+        .and(warp::path::full())
+        .and_then(move |full: warp::path::FullPath| {
+            let bp = base_path_for_static.clone();
+            async move {
+                let path = strip_base(&bp, full.as_str());
+
+                if path.is_empty() {
+                    return Err(warp::reject::not_found());
+                }
+
+                match FRONTEND_DIR.get_file(path) {
+                    Some(file) => {
+                        let mime = mime_from_path(path);
+                        Ok::<_, warp::Rejection>(
+                            warp::http::Response::builder()
+                                .header(CONTENT_TYPE, mime)
+                                .body(file.contents().to_vec())
+                                .unwrap(),
+                        )
+                    }
+                    None => Err(warp::reject::not_found()),
+                }
             }
-            None => Err(warp::reject::not_found()),
-        }
-    });
+        });
 
+    // SPA fallback — serves index.html for non-API, non-static paths
     let index_html = build_index_html(&config.base_path);
-
-    let spa_fallback = warp::any()
+    let base_path_for_spa = config.base_path.clone();
+    let spa_fallback = warp::get()
         .and(warp::path::full())
         .and_then(move |path: warp::path::FullPath| {
             let index = index_html.clone();
+            let bp = base_path_for_spa.clone();
             async move {
-                if path.as_str().starts_with("/api/") {
+                let raw = path.as_str();
+                let stripped = strip_base(&bp, raw);
+                if stripped.starts_with("api/") || raw.starts_with("/api/") {
                     Err(warp::reject::not_found())
                 } else {
                     Ok::<_, warp::Rejection>(
@@ -155,17 +177,44 @@ async fn main() {
             }
         });
 
-    let routes = api_routes
-        .or(static_files)
-        .or(spa_fallback)
-        .recover(api::handle_rejection);
+    let base_path = config.base_path.clone();
 
-    log::info!(
-        "Starting server on port {} (frontend: embedded, sqlite: {})",
-        config.port,
-        config.sqlite_path,
-    );
-    warp::serve(routes)
-        .run(([0, 0, 0, 0], config.port))
-        .await;
+    if base_path.is_empty() {
+        // No base path — simple route setup
+        let routes = api_routes
+            .or(static_files)
+            .or(spa_fallback)
+            .recover(api::handle_rejection);
+
+        log::info!(
+            "Starting server on port {} (frontend: embedded, sqlite: {})",
+            config.port,
+            config.sqlite_path,
+        );
+        warp::serve(routes)
+            .run(([0, 0, 0, 0], config.port))
+            .await;
+    } else {
+        // With base path — mount API routes under both / and /<base_path>/
+        // so it works regardless of whether the reverse proxy strips the prefix.
+        let bp_segment = base_path.trim_matches('/').to_string();
+        let prefixed_api = warp::path(bp_segment)
+            .and(api::routes(clients, webhook_state, session_store, settings_info));
+
+        let routes = api_routes
+            .or(prefixed_api)
+            .or(static_files)
+            .or(spa_fallback)
+            .recover(api::handle_rejection);
+
+        log::info!(
+            "Starting server on port {} (frontend: embedded, sqlite: {}, base: {})",
+            config.port,
+            config.sqlite_path,
+            base_path,
+        );
+        warp::serve(routes)
+            .run(([0, 0, 0, 0], config.port))
+            .await;
+    };
 }
