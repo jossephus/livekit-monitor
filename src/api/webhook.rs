@@ -5,9 +5,9 @@ use std::sync::Arc;
 use livekit_api::access_token::TokenVerifier;
 use livekit_api::webhooks::WebhookReceiver;
 use livekit_protocol as proto;
-use tokio::sync::{broadcast, RwLock};
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::sync::{RwLock, broadcast};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 use warp::{Filter, Rejection, Reply};
 
 use super::ApiError;
@@ -115,13 +115,44 @@ async fn handle_receive_webhook(
     state
         .session_store
         .handle_webhook_event(&event)
-        .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist session event: {e}"))))?;
+        .map_err(|e| {
+            warp::reject::custom(ApiError(format!("Failed to persist session event: {e}")))
+        })?;
+
+    if let Some(ref room) = event.room {
+        if !room.name.is_empty() {
+            if let Ok(json) = serde_json::to_string(room) {
+                let _ = state.session_store.save_room_detail(&room.name, &json);
+            }
+        }
+    }
+
+    let label = format!("{:?}", event.event).to_lowercase();
+    if let (Some(room), Some(participant)) = (&event.room, &event.participant) {
+        if !room.name.is_empty() {
+            let identity = if !participant.identity.is_empty() {
+                &participant.identity
+            } else {
+                &participant.sid
+            };
+            if !identity.is_empty() {
+                let is_live = !label.contains("participant_left");
+                if let Ok(json) = serde_json::to_string(participant) {
+                    let _ = state
+                        .session_store
+                        .save_participant(&room.name, identity, &json, is_live);
+                }
+            }
+        }
+    }
 
     if let Some(egress_info) = event.egress_info.clone() {
         state
             .session_store
             .upsert_egress_infos(&[egress_info])
-            .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist egress event: {e}"))))?;
+            .map_err(|e| {
+                warp::reject::custom(ApiError(format!("Failed to persist egress event: {e}")))
+            })?;
     }
 
     let _ = state.broadcast_tx.send(event.clone());

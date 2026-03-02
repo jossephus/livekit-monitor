@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use livekit_protocol as proto;
 use rusqlite::types::Value;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 #[derive(Clone)]
 pub struct SessionStore {
@@ -58,6 +58,12 @@ pub struct RoomHistoryRecord {
     pub created_at: Option<i64>,
     pub last_event_at: i64,
     pub status: String,
+}
+
+pub struct ParticipantRecord {
+    pub identity: String,
+    pub data_json: String,
+    pub updated_at: i64,
 }
 
 impl SessionStore {
@@ -117,6 +123,22 @@ impl SessionStore {
                 status TEXT NOT NULL DEFAULT 'inactive'
             );
             CREATE INDEX IF NOT EXISTS idx_room_history_last_event_at ON room_history(last_event_at DESC);
+
+            CREATE TABLE IF NOT EXISTS room_details (
+                room_name TEXT PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS room_participants (
+                room_name TEXT NOT NULL,
+                identity TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                is_live INTEGER NOT NULL DEFAULT 1,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (room_name, identity)
+            );
+            CREATE INDEX IF NOT EXISTS idx_room_participants_room ON room_participants(room_name);
             ",
         )
         .map_err(|e| format!("failed to initialize sqlite schema: {e}"))?;
@@ -507,6 +529,147 @@ impl SessionStore {
 
         Ok(records)
     }
+
+    pub fn save_room_detail(&self, room_name: &str, data_json: &str) -> Result<(), String> {
+        let now = now_epoch_seconds();
+        let incoming: serde_json::Value = serde_json::from_str(data_json)
+            .map_err(|e| format!("failed to parse incoming room json: {e}"))?;
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+
+        let merged = match conn.query_row(
+            "SELECT data_json FROM room_details WHERE room_name = ?1",
+            params![room_name],
+            |row| row.get::<_, String>(0),
+        ) {
+            Ok(existing_json) => {
+                if let Ok(mut existing) = serde_json::from_str::<serde_json::Value>(&existing_json)
+                {
+                    if let (Some(base), Some(overlay)) =
+                        (existing.as_object_mut(), incoming.as_object())
+                    {
+                        for (k, v) in overlay {
+                            let is_default = match v {
+                                serde_json::Value::Number(n) => {
+                                    n.as_i64() == Some(0) || n.as_f64() == Some(0.0)
+                                }
+                                serde_json::Value::String(s) => s.is_empty(),
+                                serde_json::Value::Bool(b) => !b,
+                                serde_json::Value::Null => true,
+                                _ => false,
+                            };
+                            if !is_default {
+                                base.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    existing
+                } else {
+                    incoming
+                }
+            }
+            Err(_) => incoming,
+        };
+
+        let merged_json = serde_json::to_string(&merged)
+            .map_err(|e| format!("failed to serialize merged room json: {e}"))?;
+
+        conn.execute(
+            "
+            INSERT INTO room_details (room_name, data_json, updated_at)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(room_name) DO UPDATE SET
+                data_json = excluded.data_json,
+                updated_at = excluded.updated_at
+            ",
+            params![room_name, merged_json, now],
+        )
+        .map_err(|e| format!("failed to save room detail: {e}"))?;
+        Ok(())
+    }
+
+    pub fn get_room_detail(&self, room_name: &str) -> Result<Option<String>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        conn.query_row(
+            "SELECT data_json FROM room_details WHERE room_name = ?1",
+            params![room_name],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|e| {
+            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                Ok(None)
+            } else {
+                Err(format!("failed to get room detail: {e}"))
+            }
+        })
+    }
+
+    pub fn save_participant(
+        &self,
+        room_name: &str,
+        identity: &str,
+        data_json: &str,
+        is_live: bool,
+    ) -> Result<(), String> {
+        let now = now_epoch_seconds();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        conn.execute(
+            "
+            INSERT INTO room_participants (room_name, identity, data_json, is_live, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(room_name, identity) DO UPDATE SET
+                data_json = excluded.data_json,
+                is_live = excluded.is_live,
+                updated_at = excluded.updated_at
+            ",
+            params![room_name, identity, data_json, is_live as i32, now],
+        )
+        .map_err(|e| format!("failed to save participant: {e}"))?;
+        Ok(())
+    }
+
+    pub fn get_room_participants(&self, room_name: &str) -> Result<Vec<ParticipantRecord>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "failed to lock sqlite connection".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "
+                SELECT identity, data_json, updated_at
+                FROM room_participants
+                WHERE room_name = ?1
+                ORDER BY updated_at DESC
+                ",
+            )
+            .map_err(|e| format!("failed to prepare participants query: {e}"))?;
+
+        let rows = stmt
+            .query_map(params![room_name], |row| {
+                Ok(ParticipantRecord {
+                    identity: row.get(0)?,
+                    data_json: row.get(1)?,
+                    updated_at: row.get(2)?,
+                })
+            })
+            .map_err(|e| format!("failed to query participants: {e}"))?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|e| format!("failed to map participant row: {e}"))?);
+        }
+        Ok(records)
+    }
 }
 
 fn upsert_egress_info(
@@ -721,9 +884,5 @@ fn normalize_timestamp(raw: i64) -> i64 {
 
 fn to_optional_timestamp(raw: i64) -> Option<i64> {
     let ts = normalize_timestamp(raw);
-    if ts > 0 {
-        Some(ts)
-    } else {
-        None
-    }
+    if ts > 0 { Some(ts) } else { None }
 }

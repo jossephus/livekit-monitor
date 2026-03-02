@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde::Serialize;
 use warp::{Filter, Rejection, Reply};
 
-use super::{with_clients, with_session_store, ApiError};
+use super::{ApiError, with_clients, with_session_store};
 use crate::livekit_client::LiveKitClients;
 use crate::session_store::SessionStore;
 
@@ -22,8 +23,8 @@ pub fn routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     list_rooms(clients.clone(), session_store.clone())
         .or(list_room_history(session_store.clone()))
-        .or(get_room(clients.clone()))
-        .or(list_participants(clients.clone()))
+        .or(get_room(clients.clone(), session_store.clone()))
+        .or(list_participants(clients.clone(), session_store.clone()))
         .or(delete_room(clients))
 }
 
@@ -52,20 +53,24 @@ fn list_room_history(
 /// GET /api/rooms/:name
 fn get_room(
     clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     warp::path!("api" / "rooms" / String)
         .and(warp::get())
         .and(with_clients(clients))
+        .and(with_session_store(session_store))
         .and_then(handle_get_room)
 }
 
 /// GET /api/rooms/:name/participants
 fn list_participants(
     clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     warp::path!("api" / "rooms" / String / "participants")
         .and(warp::get())
         .and(with_clients(clients))
+        .and(with_session_store(session_store))
         .and_then(handle_list_participants)
 }
 
@@ -96,20 +101,38 @@ async fn handle_list_rooms(
     Ok(warp::reply::json(&rooms))
 }
 
-async fn handle_get_room(name: String, clients: Arc<LiveKitClients>) -> Result<impl Reply, Rejection> {
-    let rooms = clients
-        .room
-        .list_rooms(vec![name.clone()])
-        .await
-        .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
+async fn handle_get_room(
+    name: String,
+    clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
+) -> Result<impl Reply, Rejection> {
+    match clients.room.list_rooms(vec![name.clone()]).await {
+        Ok(rooms) => {
+            if let Some(room) = rooms.into_iter().next() {
+                if let Ok(json) = serde_json::to_string(&room) {
+                    let _ = session_store.save_room_detail(&room.name, &json);
+                }
+                return Ok(warp::reply::json(&room));
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to fetch live room {}: {}", name, e);
+        }
+    }
 
-    match rooms.into_iter().next() {
-        Some(room) => Ok(warp::reply::json(&room)),
-        None => Err(warp::reject::not_found()),
+    match session_store.get_room_detail(&name) {
+        Ok(Some(json)) => {
+            let value: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
+            Ok(warp::reply::json(&value))
+        }
+        _ => Err(warp::reject::not_found()),
     }
 }
 
-async fn handle_list_room_history(session_store: Arc<SessionStore>) -> Result<impl Reply, Rejection> {
+async fn handle_list_room_history(
+    session_store: Arc<SessionStore>,
+) -> Result<impl Reply, Rejection> {
     let rooms = session_store
         .list_room_history(Some(500))
         .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
@@ -131,14 +154,67 @@ async fn handle_list_room_history(session_store: Arc<SessionStore>) -> Result<im
 async fn handle_list_participants(
     name: String,
     clients: Arc<LiveKitClients>,
+    session_store: Arc<SessionStore>,
 ) -> Result<impl Reply, Rejection> {
-    let participants = clients
-        .room
-        .list_participants(&name)
-        .await
-        .map_err(|e| warp::reject::custom(ApiError(e.to_string())))?;
+    match clients.room.list_participants(&name).await {
+        Ok(live_participants) => {
+            let live_identities: HashSet<String> = live_participants
+                .iter()
+                .map(|p| {
+                    if !p.identity.is_empty() {
+                        p.identity.clone()
+                    } else {
+                        p.sid.clone()
+                    }
+                })
+                .collect();
 
-    Ok(warp::reply::json(&participants))
+            let mut result: Vec<serde_json::Value> = live_participants
+                .iter()
+                .filter_map(|p| serde_json::to_value(p).ok())
+                .collect();
+
+            if let Ok(db_records) = session_store.get_room_participants(&name) {
+                for record in db_records {
+                    if !live_identities.contains(&record.identity) {
+                        if let Ok(mut value) =
+                            serde_json::from_str::<serde_json::Value>(&record.data_json)
+                        {
+                            if let Some(obj) = value.as_object_mut() {
+                                obj.insert(
+                                    "state".to_string(),
+                                    serde_json::Value::Number(3.into()),
+                                );
+                            }
+                            result.push(value);
+                        }
+                    }
+                }
+            }
+
+            Ok(warp::reply::json(&result))
+        }
+        Err(e) => {
+            log::warn!("Failed to fetch live participants for {}: {}", name, e);
+
+            let db_records = session_store
+                .get_room_participants(&name)
+                .map_err(|e| warp::reject::custom(ApiError(e)))?;
+
+            let result: Vec<serde_json::Value> = db_records
+                .iter()
+                .filter_map(|r| {
+                    let mut value: serde_json::Value = serde_json::from_str(&r.data_json).ok()?;
+                    if let Some(obj) = value.as_object_mut() {
+                        obj.insert("state".to_string(), serde_json::Value::Number(3.into()));
+                    }
+                    Some(value)
+                })
+                .collect();
+
+            Ok(warp::reply::json(&result))
+        }
+    }
 }
 
 async fn handle_delete_room(
