@@ -45,6 +45,10 @@ docker run --rm -p 3001:3001 \
 - `PORT` (optional, default: `3000`)
 - `SQLITE_PATH` (optional, default: `./data/monitor.db`)
 
+## Webhook configuration
+
+Sessions are powered by LiveKit webhook events. Make sure your LiveKit server registers the monitor webhook endpoint (for example, `http://host.docker.internal:3001/api/webhook`) like the `webhook.urls` entries in `examples/livekit.yaml`.
+
 ## Local development
 
 1. Install frontend dependencies:

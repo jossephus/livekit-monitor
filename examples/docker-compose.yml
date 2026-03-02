@@ -71,7 +71,7 @@ services:
       - ./ingress.yaml:/etc/ingress/ingress.yaml:ro
 
   monitor:
-    image: livekit-monitor:latest
+    image: jossephus/livekit-monitor:v0.1.2-beta
     restart: unless-stopped
     depends_on:
       - livekit

@@ -49,7 +49,7 @@
 
       mkMonitor = buildPkgs:
         buildPkgs.rustPlatform.buildRustPackage {
-          pname = "livekit-dashboard";
+          pname = "livekit-monitor";
           version = "0.1.0";
           src = cleanSrc;
           cargoLock.lockFile = ./Cargo.lock;
@@ -60,14 +60,10 @@
             mkdir -p frontend/dist
             cp -r ${frontendDist}/* frontend/dist/
           '';
-
-          postInstall = ''
-            mv $out/bin/livekit-monitor $out/bin/livekit-dashboard
-          '';
         };
 
       frontendDist = pkgs.buildNpmPackage {
-        pname = "livekit-dashboard-frontend";
+        pname = "livekit-monitor-frontend";
         version = "0.1.0";
         src = ./frontend;
         npmDepsHash = "sha256-0iipMhang1Vnnm9aqsy1VxLm/Hjj6/5aA96bFNDojxE=";
@@ -90,7 +86,7 @@
         ];
 
         config = {
-          Cmd = ["/bin/livekit-dashboard"];
+          Cmd = ["/bin/livekit-monitor"];
           Env = [
             "PORT=3000"
             "SQLITE_PATH=/data/monitor.db"

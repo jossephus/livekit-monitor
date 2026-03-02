@@ -3,6 +3,13 @@ name = "livekit-monitor"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
 [dependencies]
 warp = "0.3"
 tokio = { version = "1", features = ["full"] }
