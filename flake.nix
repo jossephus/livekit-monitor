@@ -47,7 +47,21 @@
             && !pkgs.lib.hasSuffix ".png" baseName;
       };
 
-      mkMonitor = buildPkgs:
+      # Build frontend with a given BASE_PATH
+      mkFrontendDist = basePath: pkgs.buildNpmPackage {
+        pname = "livekit-monitor-frontend";
+        version = "0.1.0";
+        src = ./frontend;
+        npmDepsHash = "sha256-0iipMhang1Vnnm9aqsy1VxLm/Hjj6/5aA96bFNDojxE=";
+        env.BASE_PATH = basePath;
+        installPhase = ''
+          mkdir -p $out
+          cp -r dist/* $out/
+        '';
+      };
+
+      # Build the Rust binary with the given frontend dist
+      mkMonitorWithFrontend = buildPkgs: frontend:
         buildPkgs.rustPlatform.buildRustPackage {
           pname = "livekit-monitor";
           version = "0.1.0";
@@ -58,29 +72,23 @@
 
           preBuild = ''
             mkdir -p frontend/dist
-            cp -r ${frontendDist}/* frontend/dist/
+            cp -r ${frontend}/* frontend/dist/
           '';
         };
 
-      frontendDist = pkgs.buildNpmPackage {
-        pname = "livekit-monitor-frontend";
-        version = "0.1.0";
-        src = ./frontend;
-        npmDepsHash = "sha256-0iipMhang1Vnnm9aqsy1VxLm/Hjj6/5aA96bFNDojxE=";
-        installPhase = ''
-          mkdir -p $out
-          cp -r dist/* $out/
-        '';
-      };
+      # Default (root deployment): base="/"
+      frontendDist = mkFrontendDist "";
+      monitor = mkMonitorWithFrontend linuxPkgs frontendDist;
 
-      monitor = mkMonitor linuxPkgs;
+      # Subpath deployment: base="/livekit-monitor/"
+      frontendDistSubpath = mkFrontendDist "/livekit-monitor";
+      monitorSubpath = mkMonitorWithFrontend linuxPkgs frontendDistSubpath;
 
-      dockerImage = linuxPkgs.dockerTools.buildLayeredImage {
-        name = "livekit-monitor";
-        tag = "latest";
+      mkDockerImage = name: tag: monitorBin: linuxPkgs.dockerTools.buildLayeredImage {
+        inherit name tag;
 
         contents = [
-          monitor
+          monitorBin
           linuxPkgs.cacert
           linuxPkgs.iana-etc
         ];
@@ -99,10 +107,15 @@
           };
         };
       };
+
+      dockerImage = mkDockerImage "livekit-monitor" "latest" monitor;
+      dockerImageSubpath = mkDockerImage "livekit-monitor" "subpath" monitorSubpath;
     in {
       packages = {
         default = monitor;
+        subpath = monitorSubpath;
         docker = dockerImage;
+        docker-subpath = dockerImageSubpath;
       };
 
       devShells.default = pkgs.mkShell {

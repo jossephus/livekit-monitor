@@ -49,7 +49,12 @@ fn mime_from_path(path: &str) -> &'static str {
     }
 }
 
-/// Build the index.html content with the base path injected as a global variable.
+/// Build the index.html content with the base path injected.
+///
+/// When BASE_PATH is set (e.g. "/livekit-monitor"), this:
+/// 1. Injects `window.__BASE_PATH__` for the React app (router basename + API calls)
+/// 2. Rewrites asset paths: `"/assets/..."` → `"/livekit-monitor/assets/..."`
+///    so the browser fetches JS/CSS from the correct reverse-proxy path
 fn build_index_html(base_path: &str) -> Vec<u8> {
     let raw = FRONTEND_DIR
         .get_file("index.html")
@@ -61,7 +66,17 @@ fn build_index_html(base_path: &str) -> Vec<u8> {
         r#"<script>window.__BASE_PATH__ = "{}";</script>"#,
         base_path
     );
-    let html = raw.replace("</head>", &format!("{}\n</head>", script));
+    let mut html = raw.replace("</head>", &format!("{}\n</head>", script));
+
+    // Rewrite absolute asset references so they go through the reverse proxy
+    if !base_path.is_empty() {
+        // Rewrite href="/assets/..." and src="/assets/..."
+        html = html.replace("href=\"/assets/", &format!("href=\"{}/assets/", base_path));
+        html = html.replace("src=\"/assets/", &format!("src=\"{}/assets/", base_path));
+        // Rewrite the favicon and other root-relative paths
+        html = html.replace("href=\"/vite.svg\"", &format!("href=\"{}/vite.svg\"", base_path));
+    }
+
     html.into_bytes()
 }
 
