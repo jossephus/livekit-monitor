@@ -17,6 +17,7 @@ const navItems = [
   { to: "/sessions", label: "Sessions" },
   { to: "/egress", label: "Egress" },
   { to: "/ingress", label: "Ingress" },
+  { to: "/live-events", label: "Live Events" },
   { to: "/settings", label: "Settings" },
 ]
 

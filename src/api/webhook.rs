@@ -1,10 +1,13 @@
 use std::collections::VecDeque;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use livekit_api::access_token::TokenVerifier;
 use livekit_api::webhooks::WebhookReceiver;
 use livekit_protocol as proto;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
 use warp::{Filter, Rejection, Reply};
 
 use super::ApiError;
@@ -17,15 +20,18 @@ pub struct WebhookState {
     receiver: WebhookReceiver,
     events: Arc<RwLock<VecDeque<proto::WebhookEvent>>>,
     session_store: Arc<SessionStore>,
+    broadcast_tx: broadcast::Sender<proto::WebhookEvent>,
 }
 
 impl WebhookState {
     pub fn new(api_key: &str, api_secret: &str, session_store: Arc<SessionStore>) -> Self {
         let verifier = TokenVerifier::with_api_key(api_key, api_secret);
+        let (broadcast_tx, _) = broadcast::channel(256);
         Self {
             receiver: WebhookReceiver::new(verifier),
             events: Arc::new(RwLock::new(VecDeque::with_capacity(MAX_EVENTS))),
             session_store,
+            broadcast_tx,
         }
     }
 }
@@ -39,7 +45,9 @@ fn with_webhook_state(
 pub fn routes(
     state: WebhookState,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    receive_webhook(state.clone()).or(list_events(state))
+    receive_webhook(state.clone())
+        .or(event_stream(state.clone()))
+        .or(list_events(state))
 }
 
 /// POST /api/webhook
@@ -52,6 +60,27 @@ fn receive_webhook(
         .and(warp::body::bytes())
         .and(with_webhook_state(state))
         .and_then(handle_receive_webhook)
+}
+
+/// GET /api/webhook/events/stream (SSE)
+fn event_stream(
+    state: WebhookState,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path!("api" / "webhook" / "events" / "stream")
+        .and(warp::get())
+        .and(with_webhook_state(state))
+        .map(|state: WebhookState| {
+            let rx = state.broadcast_tx.subscribe();
+            let stream = BroadcastStream::new(rx)
+                .filter_map(|result| {
+                    result.ok().and_then(|event| {
+                        let json = serde_json::to_string(&event).ok()?;
+                        Some(warp::sse::Event::default().data(json))
+                    })
+                })
+                .map(Ok::<_, Infallible>);
+            warp::sse::reply(warp::sse::keep_alive().stream(stream))
+        })
 }
 
 /// GET /api/webhook/events
@@ -94,6 +123,8 @@ async fn handle_receive_webhook(
             .upsert_egress_infos(&[egress_info])
             .map_err(|e| warp::reject::custom(ApiError(format!("Failed to persist egress event: {e}"))))?;
     }
+
+    let _ = state.broadcast_tx.send(event.clone());
 
     let mut events = state.events.write().await;
     if events.len() >= MAX_EVENTS {

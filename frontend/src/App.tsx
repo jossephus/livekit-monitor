@@ -7,6 +7,7 @@ import SessionsPage from "./pages/SessionsPage"
 import EgressPage from "./pages/EgressPage"
 import IngressPage from "./pages/IngressPage"
 import SettingsPage from "./pages/SettingsPage"
+import LiveEventsPage from "./pages/LiveEventsPage"
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/egress" element={<EgressPage />} />
         <Route path="/ingress" element={<IngressPage />} />
+        <Route path="/live-events" element={<LiveEventsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
