@@ -3,14 +3,51 @@ mod config;
 mod livekit_client;
 mod session_store;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use config::Config;
+use include_dir::{include_dir, Dir};
 use livekit_client::LiveKitClients;
 use session_store::SessionStore;
 use api::settings::SettingsInfo;
 use warp::Filter;
+use warp::http::header::CONTENT_TYPE;
+
+static FRONTEND_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
+
+fn mime_from_path(path: &str) -> &'static str {
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".js") {
+        "application/javascript; charset=utf-8"
+    } else if path.ends_with(".mjs") {
+        "application/javascript; charset=utf-8"
+    } else if path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if path.ends_with(".json") {
+        "application/json; charset=utf-8"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".gif") {
+        "image/gif"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else if path.ends_with(".woff") {
+        "font/woff"
+    } else if path.ends_with(".woff2") {
+        "font/woff2"
+    } else if path.ends_with(".ttf") {
+        "font/ttf"
+    } else if path.ends_with(".wasm") {
+        "application/wasm"
+    } else {
+        "application/octet-stream"
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -47,23 +84,40 @@ async fn main() {
 
     let api_routes = api::routes(clients, webhook_state, session_store, settings_info);
 
-    let frontend_dir = PathBuf::from(&config.frontend_dir);
-    let index_path = frontend_dir.join("index.html");
+    let static_files = warp::path::tail().and_then(|tail: warp::path::Tail| async move {
+        let path = tail.as_str();
+        match FRONTEND_DIR.get_file(path) {
+            Some(file) => {
+                let mime = mime_from_path(path);
+                Ok::<_, warp::Rejection>(
+                    warp::http::Response::builder()
+                        .header(CONTENT_TYPE, mime)
+                        .body(file.contents().to_vec())
+                        .unwrap(),
+                )
+            }
+            None => Err(warp::reject::not_found()),
+        }
+    });
 
-    let static_files = warp::fs::dir(frontend_dir);
+    let index_html = FRONTEND_DIR
+        .get_file("index.html")
+        .map(|f| f.contents())
+        .unwrap_or(b"<!-- index.html not found -->");
+
     let spa_fallback = warp::any()
         .and(warp::path::full())
         .and_then(move |path: warp::path::FullPath| {
-            let index = index_path.clone();
             async move {
                 if path.as_str().starts_with("/api/") {
                     Err(warp::reject::not_found())
                 } else {
-                    Ok(warp::reply::html(
-                        tokio::fs::read_to_string(&index)
-                            .await
-                            .unwrap_or_default(),
-                    ))
+                    Ok::<_, warp::Rejection>(
+                        warp::http::Response::builder()
+                            .header(CONTENT_TYPE, "text/html; charset=utf-8")
+                            .body(index_html.to_vec())
+                            .unwrap(),
+                    )
                 }
             }
         });
@@ -74,9 +128,8 @@ async fn main() {
         .recover(api::handle_rejection);
 
     log::info!(
-        "Starting server on port {} (frontend: {}, sqlite: {})",
+        "Starting server on port {} (frontend: embedded, sqlite: {})",
         config.port,
-        config.frontend_dir,
         config.sqlite_path,
     );
     warp::serve(routes)

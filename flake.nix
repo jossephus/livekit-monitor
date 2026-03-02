@@ -53,15 +53,16 @@
           version = "0.1.0";
           src = cleanSrc;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [buildPkgs.rust-bin.stable.latest.default buildPkgs.makeWrapper buildPkgs.pkg-config];
+          nativeBuildInputs = [buildPkgs.rust-bin.stable.latest.default buildPkgs.pkg-config];
           buildInputs = [buildPkgs.openssl];
-          postInstall = ''
-            mkdir -p $out/share/livekit-dashboard/frontend
-            cp -r ${frontendDist} $out/share/livekit-dashboard/frontend/dist
 
-            mv $out/bin/livekit-monitor $out/bin/livekit-dashboard-bin
-            makeWrapper $out/bin/livekit-dashboard-bin $out/bin/livekit-dashboard \
-              --set-default FRONTEND_DIR $out/share/livekit-dashboard/frontend/dist
+          preBuild = ''
+            mkdir -p frontend/dist
+            cp -r ${frontendDist}/* frontend/dist/
+          '';
+
+          postInstall = ''
+            mv $out/bin/livekit-monitor $out/bin/livekit-dashboard
           '';
         };
 
@@ -93,7 +94,6 @@
           Env = [
             "PORT=3000"
             "SQLITE_PATH=/data/monitor.db"
-            "FRONTEND_DIR=${frontendDist}"
           ];
           ExposedPorts = {
             "3000/tcp" = {};

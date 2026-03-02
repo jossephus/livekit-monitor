@@ -5,7 +5,6 @@ pub struct Config {
     pub api_key: String,
     pub api_secret: String,
     pub port: u16,
-    pub frontend_dir: String,
     pub sqlite_path: String,
 }
 
@@ -19,8 +18,6 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
-            frontend_dir: env::var("FRONTEND_DIR")
-                .unwrap_or_else(|_| "./frontend/dist".to_string()),
             sqlite_path: env::var("SQLITE_PATH")
                 .unwrap_or_else(|_| "./data/monitor.db".to_string()),
         })

@@ -18,6 +18,7 @@ webhook:
   api_key: devkey
   urls:
     - http://host.docker.internal:3001/api/webhook
+    - http://host.docker.internal:3002/api/webhook
 
 ingress:
   rtmp_base_url: "rtmp://localhost:1935/live"
